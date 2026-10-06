@@ -1,0 +1,6 @@
+{
+  "name": "MinFlow PFD — Mineral Processing & Mass Balance Suite",
+  "description": "Plataforma multiproyecto para ingeniería de procesos mineros: diseño interactivo de diagramas de flujo (PFD), motor de balance de masa metalúrgico con cierre de nodos y exportación a Excel/SVG.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

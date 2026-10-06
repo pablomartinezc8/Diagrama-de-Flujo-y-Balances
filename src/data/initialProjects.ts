@@ -1,0 +1,770 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { EquipmentCategory, EquipmentSubType, Flowsheet, Project } from '../types/process';
+import { computeDerivedSlurryProperties } from '../utils/massBalanceMath';
+
+export interface EquipmentCatalogItem {
+  type: EquipmentSubType;
+  category: EquipmentCategory;
+  name: string;
+  prefix: string;
+  description: string;
+  defaultParams: {
+    capacity_max_tph?: number;
+    power_kw?: number;
+    split_ratio_primary?: number;
+    target_underflow_cp?: number;
+  };
+}
+
+export const EQUIPMENT_CATALOG: EquipmentCatalogItem[] = [
+  // 1. Comminución
+  {
+    type: 'crusher_jaw',
+    category: 'Comminución',
+    name: 'Chancador de Mandíbula',
+    prefix: 'CR',
+    description: 'Chancado primario de mineral ROM de alta granulometría.',
+    defaultParams: { capacity_max_tph: 2500, power_kw: 450 },
+  },
+  {
+    type: 'crusher_cone',
+    category: 'Comminución',
+    name: 'Chancador Cónico',
+    prefix: 'CC',
+    description: 'Chancado secundario/terciario de pebbles o mineral grueso.',
+    defaultParams: { capacity_max_tph: 1800, power_kw: 600 },
+  },
+  {
+    type: 'mill_sag',
+    category: 'Comminución',
+    name: 'Molino SAG',
+    prefix: 'ML',
+    description: 'Molienda semiautógena húmeda con adición de agua de proceso.',
+    defaultParams: { capacity_max_tph: 2200, power_kw: 18000 },
+  },
+  {
+    type: 'mill_ball',
+    category: 'Comminución',
+    name: 'Molino de Bolas',
+    prefix: 'MB',
+    description: 'Molienda secundaria en circuito cerrado con hidrociclones.',
+    defaultParams: { capacity_max_tph: 2400, power_kw: 14500 },
+  },
+  {
+    type: 'mill_hpgr',
+    category: 'Comminución',
+    name: 'Rodillos de Alta Presión (HPGR)',
+    prefix: 'HP',
+    description: 'Conminución por compresión interparticular de alta eficiencia.',
+    defaultParams: { capacity_max_tph: 2000, power_kw: 4800 },
+  },
+  {
+    type: 'screen_vibrating',
+    category: 'Comminución',
+    name: 'Zaranda / Criba Vibratoria',
+    prefix: 'SC',
+    description: 'Clasificación por tamaño en vía seca o húmeda.',
+    defaultParams: { capacity_max_tph: 2200, split_ratio_primary: 0.85 },
+  },
+  {
+    type: 'hydrocyclone',
+    category: 'Comminución',
+    name: 'Batería de Hidrociclones',
+    prefix: 'CY',
+    description: 'Clasificación centrífuga de pulpa (Overflow a flotación / Underflow a molienda).',
+    defaultParams: { capacity_max_tph: 3800, split_ratio_primary: 0.55 },
+  },
+
+  // 2. Separación y Concentración
+  {
+    type: 'flotation_rougher',
+    category: 'Separación y Concentración',
+    name: 'Celdas Flotación Rougher',
+    prefix: 'FT-R',
+    description: 'Etapa primaria de recuperación colectiva de sulfuros valiosos.',
+    defaultParams: { capacity_max_tph: 2000, split_ratio_primary: 0.12 },
+  },
+  {
+    type: 'flotation_scavenger',
+    category: 'Separación y Concentración',
+    name: 'Celdas Flotación Scavenger',
+    prefix: 'FT-S',
+    description: 'Barrido de agotamiento antes de descarga a relave final.',
+    defaultParams: { capacity_max_tph: 1800, split_ratio_primary: 0.08 },
+  },
+  {
+    type: 'flotation_cleaner',
+    category: 'Separación y Concentración',
+    name: 'Celdas Flotación Cleaner',
+    prefix: 'FT-C',
+    description: 'Limpieza selectiva para elevar ley de concentrado comercial.',
+    defaultParams: { capacity_max_tph: 450, split_ratio_primary: 0.72 },
+  },
+  {
+    type: 'thickener',
+    category: 'Separación y Concentración',
+    name: 'Espesador High-Rate / Paste',
+    prefix: 'TH',
+    description: 'Separación sólido-líquido por sedimentación y recuperación de agua.',
+    defaultParams: { capacity_max_tph: 2000, target_underflow_cp: 62 },
+  },
+  {
+    type: 'filter_press',
+    category: 'Separación y Concentración',
+    name: 'Filtro de Disco / Prensa',
+    prefix: 'FL',
+    description: 'Desaguado final de concentrado hasta humedad de embarque (8-9%).',
+    defaultParams: { capacity_max_tph: 300, target_underflow_cp: 91 },
+  },
+  {
+    type: 'magnetic_separator',
+    category: 'Separación y Concentración',
+    name: 'Separador Magnético LIMS/WHIMS',
+    prefix: 'MG',
+    description: 'Recuperación de magnetita o eliminación de ferrosos.',
+    defaultParams: { capacity_max_tph: 800, split_ratio_primary: 0.4 },
+  },
+
+  // 3. Manejo de Sólidos/Líquidos
+  {
+    type: 'slurry_pump',
+    category: 'Manejo de Sólidos/Líquidos',
+    name: 'Cajón y Bomba de Pulpa',
+    prefix: 'PP',
+    description: 'Impulsión centrífuga de pulpa mineral hacia clasificación o proceso.',
+    defaultParams: { capacity_max_tph: 4000, power_kw: 1200 },
+  },
+  {
+    type: 'conveyor_belt',
+    category: 'Manejo de Sólidos/Líquidos',
+    name: 'Correa Transportadora Overland',
+    prefix: 'CV',
+    description: 'Transporte continuo de mineral chancado seco.',
+    defaultParams: { capacity_max_tph: 3000, power_kw: 850 },
+  },
+  {
+    type: 'leach_tank',
+    category: 'Manejo de Sólidos/Líquidos',
+    name: 'Tanque Lixiviación / Acondicionador',
+    prefix: 'TK',
+    description: 'Reactor agitado con control de residencia y adición de reactivos.',
+    defaultParams: { capacity_max_tph: 1500, power_kw: 320 },
+  },
+  {
+    type: 'pipeline_header',
+    category: 'Manejo de Sólidos/Líquidos',
+    name: 'Colector de Tubería / Acueducto',
+    prefix: 'PL',
+    description: 'Conducción presurizada de agua fresca, agua recuperada o salmuera.',
+    defaultParams: { capacity_max_tph: 2500 },
+  },
+
+  // 4. Bloques Genéricos
+  {
+    type: 'feed_source',
+    category: 'Bloques Genéricos',
+    name: 'Entrada de Alimentación (Feed)',
+    prefix: 'FD',
+    description: 'Frontera de entrada al sistema: Mineral ROM, Agua Fresca o Reactivos.',
+    defaultParams: {},
+  },
+  {
+    type: 'product_sink',
+    category: 'Bloques Genéricos',
+    name: 'Salida Producto / Relave (Output)',
+    prefix: 'PR',
+    description: 'Frontera de salida del sistema: Concentrado Final, Relave o Agua Recuperada.',
+    defaultParams: {},
+  },
+  {
+    type: 'mixer_node',
+    category: 'Bloques Genéricos',
+    name: 'Nodo de Mezcla (Mixer)',
+    prefix: 'MX',
+    description: 'Unión de múltiples corrientes (Σ Entradas = Salida).',
+    defaultParams: {},
+  },
+  {
+    type: 'splitter_node',
+    category: 'Bloques Genéricos',
+    name: 'Nodo de División (Splitter)',
+    prefix: 'SP',
+    description: 'Bifurcación controlada de flujo (Entrada = Σ Salidas).',
+    defaultParams: { split_ratio_primary: 0.5 },
+  },
+];
+
+export const INITIAL_PROJECTS: Project[] = [
+  {
+    id: 'prj-copper-sag',
+    code: 'PRJ-2026-104',
+    name: 'Ampliación Molienda SAG & Flotación Cu-Au (Línea 3)',
+    client: 'Compañía Minera Los Andes S.A.',
+    mining_unit: 'Planta Concentradora Quebrada Alta (4,200 msnm)',
+    phase: 'Factibilidad',
+    lead_engineer: 'Ing. Roberto Valdivia, M.Sc.',
+    status: 'Activo',
+    created_at: '2026-08-14',
+    updated_at: '2026-10-06',
+    primary_commodity: 'Cu-Au',
+  },
+  {
+    id: 'prj-lithium-brine',
+    code: 'PRJ-2026-219',
+    name: 'Planta de Concentración Directa y Purificación de Salmuera Li',
+    client: 'Salar Atacama Lithium Corp.',
+    mining_unit: 'Complejo Químico Salar Sur',
+    phase: 'Ingeniería de Detalle',
+    lead_engineer: 'Ing. Camila Morales, Sr. Process',
+    status: 'Activo',
+    created_at: '2026-09-02',
+    updated_at: '2026-10-05',
+    primary_commodity: 'Li-Brine',
+  },
+  {
+    id: 'prj-tailings-dewatering',
+    code: 'PRJ-2026-088',
+    name: 'Sistema de Espesamiento de Relaves en Pasta y Filtrado Híbrido',
+    client: 'Minera Cobre del Pacífico',
+    mining_unit: 'Depósito de Relaves Espesados Pampa Norte',
+    phase: 'Pre-factibilidad',
+    lead_engineer: 'Ing. Javier Mendoza, P.Eng.',
+    status: 'En Revisión',
+    created_at: '2026-06-20',
+    updated_at: '2026-09-29',
+    primary_commodity: 'Polimetálico Fe-Cu',
+  },
+];
+
+export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
+  'prj-copper-sag': {
+    id: 'fs-copper-01',
+    project_id: 'prj-copper-sag',
+    version: 'Rev 4.2 — Caso Base Diseño',
+    tolerance_pct: 0.1,
+    nodes: [
+      {
+        id: 'node-feed-rom',
+        tag: 'FD-101',
+        type: 'feed_source',
+        category: 'Bloques Genéricos',
+        name: 'Alimentación Mineral ROM',
+        position_x: 60,
+        position_y: 110,
+        parameters: {},
+      },
+      {
+        id: 'node-feed-water',
+        tag: 'FD-102',
+        type: 'feed_source',
+        category: 'Bloques Genéricos',
+        name: 'Agua de Proceso Molienda',
+        position_x: 60,
+        position_y: 280,
+        parameters: {},
+      },
+      {
+        id: 'node-sag-mill',
+        tag: 'ML-201',
+        type: 'mill_sag',
+        category: 'Comminución',
+        name: 'Molino SAG 40x26 ft',
+        position_x: 340,
+        position_y: 190,
+        parameters: { capacity_max_tph: 2200, power_kw: 22000 },
+      },
+      {
+        id: 'node-cyclone-pack',
+        tag: 'CY-202',
+        type: 'hydrocyclone',
+        category: 'Comminución',
+        name: 'Batería Hidrociclones 33"',
+        position_x: 640,
+        position_y: 190,
+        parameters: { capacity_max_tph: 3500, split_ratio_primary: 0.35 },
+      },
+      {
+        id: 'node-flotation-rougher',
+        tag: 'FT-301',
+        type: 'flotation_rougher',
+        category: 'Separación y Concentración',
+        name: 'Banco Flotación Rougher (6x300m³)',
+        position_x: 940,
+        position_y: 100,
+        parameters: { capacity_max_tph: 1500, split_ratio_primary: 0.10 },
+      },
+      {
+        id: 'node-prod-conc',
+        tag: 'PR-401',
+        type: 'product_sink',
+        category: 'Bloques Genéricos',
+        name: 'Concentrado Colectivo Cu-Au',
+        position_x: 1240,
+        position_y: 45,
+        parameters: {},
+      },
+      {
+        id: 'node-prod-tails',
+        tag: 'PR-402',
+        type: 'product_sink',
+        category: 'Bloques Genéricos',
+        name: 'Relave Rougher a Espesamiento',
+        position_x: 1240,
+        position_y: 195,
+        parameters: {},
+      },
+      {
+        id: 'node-prod-uf',
+        tag: 'PR-203',
+        type: 'product_sink',
+        category: 'Bloques Genéricos',
+        name: 'Underflow a Molino de Bolas',
+        position_x: 940,
+        position_y: 310,
+        parameters: {},
+      },
+    ],
+    edges: [
+      {
+        id: 'STR-001',
+        name: 'Mineral Fresco Chancado (F80 125mm)',
+        source_node_id: 'node-feed-rom',
+        target_node_id: 'node-sag-mill',
+        stream_type: 'ore',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 1800,
+            water_m3h: 55.67,
+            percent_solids: 97.0,
+            solid_sg: 2.75,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 15,
+            assay: { cu_pct: 0.85, au_gpt: 0.42, li_pct: 0.0, fe_pct: 4.1, mo_pct: 0.022 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-002',
+        name: 'Agua Adición Molino & Cajón',
+        source_node_id: 'node-feed-water',
+        target_node_id: 'node-sag-mill',
+        stream_type: 'water',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 0,
+            water_m3h: 944.33,
+            percent_solids: 0,
+            solid_sg: 2.75,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 0,
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 0, fe_pct: 0, mo_pct: 0 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-003',
+        name: 'Descarga Pulpa SAG a Clasificación',
+        source_node_id: 'node-sag-mill',
+        target_node_id: 'node-cyclone-pack',
+        stream_type: 'slurry',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 1800,
+            water_m3h: 1000.0,
+            percent_solids: 64.29,
+            solid_sg: 2.75,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 15,
+            assay: { cu_pct: 0.85, au_gpt: 0.42, li_pct: 0.0, fe_pct: 4.1, mo_pct: 0.022 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-004',
+        name: 'Overflow Ciclones (P80 150 µm)',
+        source_node_id: 'node-cyclone-pack',
+        target_node_id: 'node-flotation-rougher',
+        stream_type: 'slurry',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 1170,
+            water_m3h: 790.0,
+            percent_solids: 59.69,
+            solid_sg: 2.75,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 38,
+            assay: { cu_pct: 0.92, au_gpt: 0.45, li_pct: 0.0, fe_pct: 3.9, mo_pct: 0.025 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-005',
+        name: 'Underflow Ciclones (Carga Circulante)',
+        source_node_id: 'node-cyclone-pack',
+        target_node_id: 'node-prod-uf',
+        stream_type: 'slurry',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 630,
+            water_m3h: 210.0,
+            percent_solids: 75.0,
+            solid_sg: 2.75,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 12,
+            assay: { cu_pct: 0.72, au_gpt: 0.36, li_pct: 0.0, fe_pct: 4.47, mo_pct: 0.016 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-006',
+        name: 'Concentrado Rougher Cu-Au',
+        source_node_id: 'node-flotation-rougher',
+        target_node_id: 'node-prod-conc',
+        stream_type: 'concentrate',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 117,
+            water_m3h: 175.5,
+            percent_solids: 40.0,
+            solid_sg: 4.1,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 65,
+            assay: { cu_pct: 8.28, au_gpt: 3.65, li_pct: 0.0, fe_pct: 24.5, mo_pct: 0.19 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-007',
+        name: 'Colas Rougher a Scavenger/Relave',
+        source_node_id: 'node-flotation-rougher',
+        target_node_id: 'node-prod-tails',
+        stream_type: 'tailings',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 1053,
+            water_m3h: 614.5,
+            percent_solids: 63.15,
+            solid_sg: 2.68,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 10,
+            assay: { cu_pct: 0.102, au_gpt: 0.09, li_pct: 0.0, fe_pct: 1.61, mo_pct: 0.007 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+    ],
+  },
+
+  'prj-lithium-brine': {
+    id: 'fs-lithium-01',
+    project_id: 'prj-lithium-brine',
+    version: 'Rev 2.0 — Extracción Directa (DLE)',
+    tolerance_pct: 0.1,
+    nodes: [
+      {
+        id: 'li-feed-brine',
+        tag: 'FD-101',
+        type: 'feed_source',
+        category: 'Bloques Genéricos',
+        name: 'Salmuera Fresca Pozos Salar',
+        position_x: 80,
+        position_y: 120,
+        parameters: {},
+      },
+      {
+        id: 'li-feed-eluent',
+        tag: 'FD-102',
+        type: 'feed_source',
+        category: 'Bloques Genéricos',
+        name: 'Solución Eluyente Ácida Débil',
+        position_x: 80,
+        position_y: 280,
+        parameters: {},
+      },
+      {
+        id: 'li-leach-column',
+        tag: 'TK-201',
+        type: 'leach_tank',
+        category: 'Manejo de Sólidos/Líquidos',
+        name: 'Reactor Adsorción / Elución DLE',
+        position_x: 420,
+        position_y: 195,
+        parameters: { residence_time_min: 90, power_kw: 410 },
+      },
+      {
+        id: 'li-splitter-memb',
+        tag: 'SP-301',
+        type: 'splitter_node',
+        category: 'Bloques Genéricos',
+        name: 'Etapa Nanofiltración / Ósmosis',
+        position_x: 760,
+        position_y: 195,
+        parameters: { split_ratio_primary: 0.28 },
+      },
+      {
+        id: 'li-prod-eluate',
+        tag: 'PR-401',
+        type: 'product_sink',
+        category: 'Bloques Genéricos',
+        name: 'Eluato Rico en Litio a Carbonatación',
+        position_x: 1120,
+        position_y: 110,
+        parameters: {},
+      },
+      {
+        id: 'li-prod-spent',
+        tag: 'PR-402',
+        type: 'product_sink',
+        category: 'Bloques Genéricos',
+        name: 'Salmuera Agotada a Reinyección',
+        position_x: 1120,
+        position_y: 280,
+        parameters: {},
+      },
+    ],
+    edges: [
+      {
+        id: 'STR-101',
+        name: 'Salmuera Alimentación (1850 mg/L Li)',
+        source_node_id: 'li-feed-brine',
+        target_node_id: 'li-leach-column',
+        stream_type: 'slurry',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 18.5,
+            water_m3h: 450.0,
+            percent_solids: 3.3,
+            solid_sg: 2.15,
+            liquid_sg: 1.21,
+            reagent_dosage_gpt: 45,
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 1.85, fe_pct: 0.02 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-102',
+        name: 'Agua Desmineralizada / Eluyente',
+        source_node_id: 'li-feed-eluent',
+        target_node_id: 'li-leach-column',
+        stream_type: 'water',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 1.5,
+            water_m3h: 150.0,
+            percent_solids: 0.99,
+            solid_sg: 2.15,
+            liquid_sg: 1.02,
+            reagent_dosage_gpt: 120,
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 0.05, fe_pct: 0 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-103',
+        name: 'Corriente Descarga Reactor DLE',
+        source_node_id: 'li-leach-column',
+        target_node_id: 'li-splitter-memb',
+        stream_type: 'slurry',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 20.0,
+            water_m3h: 600.0,
+            percent_solids: 2.71,
+            solid_sg: 2.15,
+            liquid_sg: 1.16,
+            reagent_dosage_gpt: 60,
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 1.715, fe_pct: 0.018 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-104',
+        name: 'Concentrado Purificado LiCl',
+        source_node_id: 'li-splitter-memb',
+        target_node_id: 'li-prod-eluate',
+        stream_type: 'concentrate',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 5.6,
+            water_m3h: 168.0,
+            percent_solids: 2.79,
+            solid_sg: 2.15,
+            liquid_sg: 1.16,
+            reagent_dosage_gpt: 25,
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 5.65, fe_pct: 0.002 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-105',
+        name: 'Salmuera Residual Deslitizada',
+        source_node_id: 'li-splitter-memb',
+        target_node_id: 'li-prod-spent',
+        stream_type: 'tailings',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 14.4,
+            water_m3h: 432.0,
+            percent_solids: 2.79,
+            solid_sg: 2.15,
+            liquid_sg: 1.16,
+            reagent_dosage_gpt: 10,
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 0.185, fe_pct: 0.024 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+    ],
+  },
+
+  'prj-tailings-dewatering': {
+    id: 'fs-tailings-01',
+    project_id: 'prj-tailings-dewatering',
+    version: 'Rev 1.4 — Balance de Agua Recuperada',
+    tolerance_pct: 0.1,
+    nodes: [
+      {
+        id: 'tl-feed-tails',
+        tag: 'FD-501',
+        type: 'feed_source',
+        category: 'Bloques Genéricos',
+        name: 'Pulpa Relave General Planta',
+        position_x: 70,
+        position_y: 130,
+        parameters: {},
+      },
+      {
+        id: 'tl-feed-floc',
+        tag: 'FD-502',
+        type: 'feed_source',
+        category: 'Bloques Genéricos',
+        name: 'Solución Floculante Diluida',
+        position_x: 70,
+        position_y: 285,
+        parameters: {},
+      },
+      {
+        id: 'tl-thickener-paste',
+        tag: 'TH-510',
+        type: 'thickener',
+        category: 'Separación y Concentración',
+        name: 'Espesador Deep-Cone 65m',
+        position_x: 430,
+        position_y: 200,
+        parameters: { target_underflow_cp: 65, capacity_max_tph: 2500 },
+      },
+      {
+        id: 'tl-prod-uf',
+        tag: 'PR-520',
+        type: 'product_sink',
+        category: 'Bloques Genéricos',
+        name: 'Relave en Pasta a Depósito (65% Cp)',
+        position_x: 860,
+        position_y: 280,
+        parameters: {},
+      },
+      {
+        id: 'tl-prod-water',
+        tag: 'PR-530',
+        type: 'product_sink',
+        category: 'Bloques Genéricos',
+        name: 'Overflow Agua Clarificada a Planta',
+        position_x: 860,
+        position_y: 110,
+        parameters: {},
+      },
+    ],
+    edges: [
+      {
+        id: 'STR-201',
+        name: 'Alimentación Relave Fresco (32% Cp)',
+        source_node_id: 'tl-feed-tails',
+        target_node_id: 'tl-thickener-paste',
+        stream_type: 'tailings',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 1500,
+            water_m3h: 3187.5,
+            percent_solids: 32.0,
+            solid_sg: 2.7,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 22,
+            assay: { cu_pct: 0.09, au_gpt: 0.05, li_pct: 0, fe_pct: 3.4 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-202',
+        name: 'Agua Dilución Floculante',
+        source_node_id: 'tl-feed-floc',
+        target_node_id: 'tl-thickener-paste',
+        stream_type: 'water',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 0,
+            water_m3h: 112.5,
+            percent_solids: 0,
+            solid_sg: 2.7,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 28,
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 0, fe_pct: 0 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-203',
+        name: 'Underflow Relave Espesado',
+        source_node_id: 'tl-thickener-paste',
+        target_node_id: 'tl-prod-uf',
+        stream_type: 'tailings',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 1500,
+            water_m3h: 807.69,
+            percent_solids: 65.0,
+            solid_sg: 2.7,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 22,
+            assay: { cu_pct: 0.09, au_gpt: 0.05, li_pct: 0, fe_pct: 3.4 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+      {
+        id: 'STR-204',
+        name: 'Agua Recuperada Overflow Espesador',
+        source_node_id: 'tl-thickener-paste',
+        target_node_id: 'tl-prod-water',
+        stream_type: 'water',
+        flow_data: computeDerivedSlurryProperties(
+          {
+            solids_tph: 0,
+            water_m3h: 2492.31,
+            percent_solids: 0,
+            solid_sg: 2.7,
+            liquid_sg: 1.0,
+            reagent_dosage_gpt: 0,
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 0, fe_pct: 0 },
+          },
+          'from_solids_and_water'
+        ),
+      },
+    ],
+  },
+};
