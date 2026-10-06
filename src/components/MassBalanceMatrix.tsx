@@ -20,8 +20,9 @@ import {
   StreamEdge,
 } from '../types/process';
 import {
+  exportFlowsheetToPrintablePdf,
   exportFlowsheetToSvg,
-  exportMassBalanceToCsv,
+  exportProfessionalExcelSheet,
   exportProjectModelToJson,
 } from '../utils/exportTools';
 import { computeDerivedSlurryProperties } from '../utils/massBalanceMath';
@@ -131,11 +132,20 @@ export const MassBalanceMatrix: React.FC<MassBalanceMatrixProps> = ({
 
           <button
             type="button"
+            onClick={() => exportFlowsheetToPrintablePdf(project, flowsheet, diagnostics)}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-cyan-500/50 rounded transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <Download className="w-3.5 h-3.5 text-cyan-400" />
+            Descargar Plano PDF (Sello TAGING)
+          </button>
+
+          <button
+            type="button"
             onClick={() => exportFlowsheetToSvg(project, flowsheet)}
             className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded transition-colors cursor-pointer whitespace-nowrap"
           >
             <Download className="w-3.5 h-3.5 text-sky-400" />
-            Exportar PFD Vectorial (.SVG)
+            PFD Vectorial (.SVG)
           </button>
 
           <button
@@ -144,16 +154,16 @@ export const MassBalanceMatrix: React.FC<MassBalanceMatrixProps> = ({
             className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded transition-colors cursor-pointer whitespace-nowrap"
           >
             <FileCode2 className="w-3.5 h-3.5 text-amber-400" />
-            Exportar Modelo (.JSON)
+            Modelo (.JSON)
           </button>
 
           <button
             type="button"
-            onClick={() => exportMassBalanceToCsv(project, flowsheet, diagnostics)}
+            onClick={() => exportProfessionalExcelSheet(project, flowsheet, diagnostics)}
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded transition-colors cursor-pointer whitespace-nowrap"
           >
             <FileSpreadsheet className="w-4 h-4" />
-            Exportar Balance a Excel (.CSV)
+            Exportar Planilla Excel (.XLS)
           </button>
         </div>
       </div>

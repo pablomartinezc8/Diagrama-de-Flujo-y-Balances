@@ -246,6 +246,30 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
     project_id: 'prj-copper-sag',
     version: 'Rev 4.2 — Caso Base Diseño',
     tolerance_pct: 0.1,
+    annotations: [
+      {
+        id: 'ann-truck-loading',
+        kind: 'zone_box',
+        title: 'ZONA DE RECEPCIÓN Y DESCARGA DE CAMIONES CAEX (300 t)',
+        details: 'Buzón Primario + Stockpile Gruesos (Capacidad Viva: 45,000 t) · Alimentación a Molienda',
+        position_x: 36,
+        position_y: 40,
+        width: 245,
+        height: 350,
+        color_theme: 'amber',
+      },
+      {
+        id: 'ann-grinding-bay',
+        kind: 'zone_box',
+        title: 'NAVE DE MOLIENDA SAG & CLASIFICACIÓN',
+        details: 'Puente Grúa 120 t · P80 corte diseño: 150 µm · Cierre de Balance ±0.1%',
+        position_x: 315,
+        position_y: 120,
+        width: 555,
+        height: 215,
+        color_theme: 'cyan',
+      },
+    ],
     nodes: [
       {
         id: 'node-feed-rom',

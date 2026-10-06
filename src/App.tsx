@@ -4,24 +4,29 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileSpreadsheet } from 'lucide-react';
+import { FileSpreadsheet, FileText } from 'lucide-react';
 import { ArchitectureBlueprintView } from './components/ArchitectureBlueprintView';
 import { FlowsheetWorkspace } from './components/FlowsheetWorkspace';
+import { GuideAndHelpView } from './components/GuideAndHelpView';
 import { MassBalanceMatrix } from './components/MassBalanceMatrix';
 import { ProjectDashboard } from './components/ProjectDashboard';
+import { TagingBrandLogo } from './components/TagingBrandLogo';
 import { INITIAL_FLOWSHEETS, INITIAL_PROJECTS } from './data/initialProjects';
 import { Flowsheet, Project } from './types/process';
-import { exportMassBalanceToCsv } from './utils/exportTools';
+import {
+  exportFlowsheetToPrintablePdf,
+  exportProfessionalExcelSheet,
+} from './utils/exportTools';
 import {
   computeDerivedSlurryProperties,
   evaluateNodeBalance,
   reconcileFlowsheetMassBalance,
 } from './utils/massBalanceMath';
 
-type ActiveModule = 'projects' | 'canvas' | 'matrix' | 'architecture';
+type ActiveModule = 'projects' | 'canvas' | 'matrix' | 'architecture' | 'guide';
 
-const STORAGE_KEY_PROJECTS = 'minflow_pfd_projects_v1';
-const STORAGE_KEY_FLOWSHEETS = 'minflow_pfd_flowsheets_v1';
+const STORAGE_KEY_PROJECTS = 'minflow_pfd_projects_v2';
+const STORAGE_KEY_FLOWSHEETS = 'minflow_pfd_flowsheets_v2';
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>(() => {
@@ -263,21 +268,22 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* TOP BAR CONTRACT: 1-Row, 3-Zone Header */}
+      {/* TOP BAR CONTRACT: 1-Row, 3-Zone Header with Official TAGING Brand Logo */}
       <header className="h-[57px] px-5 border-b border-slate-800 bg-slate-950/95 flex items-center justify-between gap-4 shrink-0">
-        {/* Zone 1: Single Text Element Wordmark */}
+        {/* Zone 1: Brand Logo TAGING */}
         <a
           href="#canvas"
           onClick={(e) => {
             e.preventDefault();
             setActiveModule('canvas');
           }}
-          className="text-lg font-bold tracking-tight text-slate-100 font-display whitespace-nowrap shrink-0"
+          className="flex items-center shrink-0"
+          aria-label="TAGING Ingeniería Inteligente - Inicio"
         >
-          MinFlow PFD
+          <TagingBrandLogo size="sm" showSubtitle={false} />
         </a>
 
-        {/* Zone 2: 4 Clean Single-Line Navigation Links */}
+        {/* Zone 2: 5 Clean Single-Line Navigation Links */}
         <nav
           aria-label="Navegación principal de módulos"
           className="flex items-center gap-5 text-xs md:text-sm font-medium text-slate-400 overflow-x-auto"
@@ -338,15 +344,29 @@ export default function App() {
           >
             Arquitectura & Fórmulas
           </a>
+          <a
+            href="#guide"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveModule('guide');
+            }}
+            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+              activeModule === 'guide'
+                ? 'text-cyan-300 border-cyan-400'
+                : 'border-transparent hover:text-slate-100'
+            }`}
+          >
+            Cómo Funciona
+          </a>
         </nav>
 
-        {/* Zone 3: 2 Primary Actions (Active Project Selector + Excel/CSV Export) */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* Zone 3: 2 Primary Actions (Active Project Selector + Instant Printable PDF / Excel) */}
+        <div className="flex items-center gap-2 shrink-0">
           <select
             aria-label="Selector de Proyecto Activo"
             value={activeProject.id}
             onChange={(e) => setActiveProjectId(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono text-slate-100 focus:outline-none focus:border-cyan-400 max-w-[230px] truncate"
+            className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono text-slate-100 focus:outline-none focus:border-cyan-400 max-w-[210px] truncate"
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -358,12 +378,23 @@ export default function App() {
           <button
             type="button"
             onClick={() =>
-              exportMassBalanceToCsv(activeProject, activeFlowsheet, activeDiagnostics)
+              exportFlowsheetToPrintablePdf(activeProject, activeFlowsheet, activeDiagnostics)
             }
-            className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-cyan-500/50 rounded transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <FileText className="w-3.5 h-3.5 text-cyan-400" />
+            Plano PDF
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              exportProfessionalExcelSheet(activeProject, activeFlowsheet, activeDiagnostics)
+            }
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
-            Exportar Balance CSV
+            Planilla Excel
           </button>
         </div>
       </header>
@@ -385,6 +416,7 @@ export default function App() {
 
         {activeModule === 'canvas' && (
           <FlowsheetWorkspace
+            project={activeProject}
             flowsheet={activeFlowsheet}
             diagnostics={activeDiagnostics}
             onUpdateFlowsheet={handleUpdateFlowsheet}
@@ -408,7 +440,25 @@ export default function App() {
             flowsheet={activeFlowsheet}
           />
         )}
+
+        {activeModule === 'guide' && (
+          <GuideAndHelpView onNavigateToModule={setActiveModule} />
+        )}
       </main>
+
+      {/* PIE CORPORATIVO DISCRETO CUANDO NO ESTÁ EN EL LIENZO FULL-HEIGHT */}
+      {activeModule !== 'canvas' && (
+        <footer className="border-t border-slate-800/80 bg-slate-950 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+          <div className="flex items-center gap-3">
+            <TagingBrandLogo size="sm" showSubtitle={false} />
+            <span>·</span>
+            <span>Propiedad de TAGING — Ingeniería Inteligente</span>
+          </div>
+          <div className="font-mono text-[11px] text-slate-500">
+            Plataforma de Diagramas de Flujo (PFD) y Balances de Masa Mineros
+          </div>
+        </footer>
+      )}
     </div>
   );
 }

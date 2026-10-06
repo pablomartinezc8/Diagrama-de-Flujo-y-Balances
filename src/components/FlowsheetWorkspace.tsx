@@ -9,30 +9,42 @@ import {
   ArrowRight,
   Calculator,
   CheckCircle2,
+  FileSpreadsheet,
+  FileText,
   Link2,
   Maximize2,
-  Plus,
+  PenTool,
+  PlusSquare,
   Sliders,
+  StickyNote,
   Trash2,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import {
-   EQUIPMENT_CATALOG,
+  EQUIPMENT_CATALOG,
   EquipmentCatalogItem,
 } from '../data/initialProjects';
 import {
+  CanvasAnnotation,
   EquipmentCategory,
   EquipmentNode,
   Flowsheet,
   NodeBalanceDiagnostics,
+  Project,
   StreamEdge,
   StreamFlowData,
 } from '../types/process';
+import {
+  exportFlowsheetToPrintablePdf,
+  exportProfessionalExcelSheet,
+} from '../utils/exportTools';
 import { computeDerivedSlurryProperties } from '../utils/massBalanceMath';
 import { EquipmentSymbolSvg } from './EquipmentSymbols';
+import { TagingBrandLogo } from './TagingBrandLogo';
 
 interface FlowsheetWorkspaceProps {
+  project: Project;
   flowsheet: Flowsheet;
   diagnostics: NodeBalanceDiagnostics[];
   onUpdateFlowsheet: (updated: Flowsheet) => void;
@@ -47,6 +59,7 @@ const CATEGORIES: EquipmentCategory[] = [
 ];
 
 export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
+  project,
   flowsheet,
   diagnostics,
   onUpdateFlowsheet,
@@ -57,20 +70,31 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
     flowsheet.edges[0]?.id ?? null
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [connectingSourceNodeId, setConnectingSourceNodeId] = useState<string | null>(null);
+  const [isDrawZoneMode, setIsDrawZoneMode] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(1);
   const [calcMode, setCalcMode] = useState<'from_solids_and_cp' | 'from_solids_and_water'>(
     'from_solids_and_cp'
   );
 
-  // Dragging state for equipment nodes on canvas
+  // Dragging state for equipment nodes and manual zones on canvas
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [draggingAnnotationId, setDraggingAnnotationId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Interactive rectangle drawing state on canvas
+  const [drawStartPt, setDrawStartPt] = useState<{ x: number; y: number } | null>(null);
+  const [drawCurrentPt, setDrawCurrentPt] = useState<{ x: number; y: number } | null>(null);
+
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
+  const annotations = flowsheet.annotations ?? [];
   const selectedStream = flowsheet.edges.find((e) => e.id === selectedStreamId) ?? null;
   const selectedNode = flowsheet.nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedNodeDiag = diagnostics.find((d) => d.nodeId === selectedNodeId) ?? null;
+  const selectedAnnotation =
+    annotations.find((a) => a.id === selectedAnnotationId) ?? null;
 
   const diagMap = new Map(diagnostics.map((d) => [d.nodeId, d]));
   const nodeMap = new Map(flowsheet.nodes.map((n) => [n.id, n]));
@@ -98,6 +122,42 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
     });
     setSelectedNodeId(newNode.id);
     setSelectedStreamId(null);
+    setSelectedAnnotationId(null);
+  };
+
+  // Añadir Zona Manual / Cuadro Personalizado / Nota Técnica (ej. Zona de Carga de Camiones)
+  const handleAddManualAnnotation = (
+    kind: CanvasAnnotation['kind'],
+    customRect?: { x: number; y: number; w: number; h: number }
+  ) => {
+    const count = annotations.length + 1;
+    const newAnn: CanvasAnnotation = {
+      id: `ann-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      kind,
+      title:
+        kind === 'zone_box'
+          ? `ZONA OPERATIVA #${count} (Ej. Carga de Camiones / Stockpile)`
+          : kind === 'custom_block'
+          ? `BLOQUE PERSONALIZADO #${count} (Ej. Tolva / Chancado Móvil)`
+          : `NOTA DE INGENIERÍA #${count}`,
+      details:
+        kind === 'zone_box'
+          ? 'Escribe aquí detalles operativos, capacidad de camiones, turnos o especificaciones del área.'
+          : 'Agrega observaciones de proceso, cotas, parámetros de diseño o instrucciones para el cliente.',
+      position_x: customRect?.x ?? 180 + ((count * 40) % 360),
+      position_y: customRect?.y ?? 90 + ((count * 35) % 200),
+      width: customRect?.w ?? (kind === 'zone_box' ? 320 : 230),
+      height: customRect?.h ?? (kind === 'zone_box' ? 210 : 110),
+      color_theme: kind === 'zone_box' ? 'amber' : kind === 'custom_block' ? 'emerald' : 'cyan',
+    };
+
+    onUpdateFlowsheet({
+      ...flowsheet,
+      annotations: [...annotations, newAnn],
+    });
+    setSelectedAnnotationId(newAnn.id);
+    setSelectedNodeId(null);
+    setSelectedStreamId(null);
   };
 
   // Drag & Drop desde la paleta izquierda hacia el lienzo
@@ -114,12 +174,24 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
     handleAddEquipment(catalogItem, x, y);
   };
 
-  // Movimiento de nodos dentro del lienzo PFD
+  // Inicio de dibujo manual de un rectángulo/cuadrado en el lienzo
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDrawZoneMode || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = Math.max(10, Math.round((e.clientX - rect.left) / zoom));
+    const y = Math.max(10, Math.round((e.clientY - rect.top) / zoom));
+    setDrawStartPt({ x, y });
+    setDrawCurrentPt({ x: x + 40, y: y + 40 });
+  };
+
+  // Movimiento de nodos, zonas manuales o dibujo de cuadrado en el lienzo PFD
   const handleNodeMouseDown = (
     e: React.MouseEvent<HTMLDivElement>,
     node: EquipmentNode
   ) => {
     e.stopPropagation();
+    if (isDrawZoneMode) return;
+
     if (connectingSourceNodeId) {
       if (connectingSourceNodeId !== node.id) {
         handleCreateStreamConnection(connectingSourceNodeId, node.id);
@@ -130,6 +202,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
 
     setSelectedNodeId(node.id);
     setSelectedStreamId(null);
+    setSelectedAnnotationId(null);
 
     if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
@@ -140,22 +213,79 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
     });
   };
 
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!draggingNodeId || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const nextX = Math.max(16, Math.round((e.clientX - rect.left) / zoom - dragOffset.x));
-    const nextY = Math.max(16, Math.round((e.clientY - rect.top) / zoom - dragOffset.y));
+  const handleAnnotationMouseDown = (
+    e: React.MouseEvent<HTMLDivElement>,
+    ann: CanvasAnnotation
+  ) => {
+    e.stopPropagation();
+    if (isDrawZoneMode) return;
 
-    onUpdateFlowsheet({
-      ...flowsheet,
-      nodes: flowsheet.nodes.map((n) =>
-        n.id === draggingNodeId ? { ...n, position_x: nextX, position_y: nextY } : n
-      ),
+    setSelectedAnnotationId(ann.id);
+    setSelectedNodeId(null);
+    setSelectedStreamId(null);
+
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    setDraggingAnnotationId(ann.id);
+    setDragOffset({
+      x: (e.clientX - rect.left) / zoom - ann.position_x,
+      y: (e.clientY - rect.top) / zoom - ann.position_y,
     });
   };
 
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+
+    if (isDrawZoneMode && drawStartPt) {
+      const currX = Math.max(16, Math.round((e.clientX - rect.left) / zoom));
+      const currY = Math.max(16, Math.round((e.clientY - rect.top) / zoom));
+      setDrawCurrentPt({ x: currX, y: currY });
+      return;
+    }
+
+    if (draggingNodeId) {
+      const nextX = Math.max(16, Math.round((e.clientX - rect.left) / zoom - dragOffset.x));
+      const nextY = Math.max(16, Math.round((e.clientY - rect.top) / zoom - dragOffset.y));
+
+      onUpdateFlowsheet({
+        ...flowsheet,
+        nodes: flowsheet.nodes.map((n) =>
+          n.id === draggingNodeId ? { ...n, position_x: nextX, position_y: nextY } : n
+        ),
+      });
+      return;
+    }
+
+    if (draggingAnnotationId) {
+      const nextX = Math.max(12, Math.round((e.clientX - rect.left) / zoom - dragOffset.x));
+      const nextY = Math.max(12, Math.round((e.clientY - rect.top) / zoom - dragOffset.y));
+
+      onUpdateFlowsheet({
+        ...flowsheet,
+        annotations: annotations.map((a) =>
+          a.id === draggingAnnotationId ? { ...a, position_x: nextX, position_y: nextY } : a
+        ),
+      });
+    }
+  };
+
   const handleCanvasMouseUp = () => {
+    if (isDrawZoneMode && drawStartPt && drawCurrentPt) {
+      const x = Math.min(drawStartPt.x, drawCurrentPt.x);
+      const y = Math.min(drawStartPt.y, drawCurrentPt.y);
+      const w = Math.max(160, Math.abs(drawCurrentPt.x - drawStartPt.x));
+      const h = Math.max(100, Math.abs(drawCurrentPt.y - drawStartPt.y));
+
+      handleAddManualAnnotation('zone_box', { x, y, w, h });
+      setDrawStartPt(null);
+      setDrawCurrentPt(null);
+      setIsDrawZoneMode(false);
+      return;
+    }
+
     setDraggingNodeId(null);
+    setDraggingAnnotationId(null);
   };
 
   // Crear nueva corriente (StreamEdge) entre dos equipos
@@ -191,6 +321,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
     });
     setSelectedStreamId(newEdge.id);
     setSelectedNodeId(null);
+    setSelectedAnnotationId(null);
   };
 
   // Actualizar variables metalúrgicas de una corriente seleccionada
@@ -227,6 +358,25 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
     });
   };
 
+  const handleUpdateSelectedAnnotation = (patch: Partial<CanvasAnnotation>) => {
+    if (!selectedAnnotation) return;
+    onUpdateFlowsheet({
+      ...flowsheet,
+      annotations: annotations.map((a) =>
+        a.id === selectedAnnotation.id ? { ...a, ...patch } : a
+      ),
+    });
+  };
+
+  const handleDeleteSelectedAnnotation = () => {
+    if (!selectedAnnotation) return;
+    onUpdateFlowsheet({
+      ...flowsheet,
+      annotations: annotations.filter((a) => a.id !== selectedAnnotation.id),
+    });
+    setSelectedAnnotationId(null);
+  };
+
   const handleDeleteSelectedStream = () => {
     if (!selectedStream) return;
     const remaining = flowsheet.edges.filter((e) => e.id !== selectedStream.id);
@@ -258,18 +408,70 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-57px)] overflow-hidden bg-slate-950">
-      {/* COLUMNA IZQUIERDA (310px): Paleta Drag & Drop de Equipos Industriales */}
-      <aside className="w-full lg:w-[310px] shrink-0 bg-slate-900/90 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col max-h-[38vh] lg:max-h-none overflow-hidden">
+      {/* COLUMNA IZQUIERDA (315px): Paleta Drag & Drop de Equipos + Dibujo Manual de Zonas */}
+      <aside className="w-full lg:w-[315px] shrink-0 bg-slate-900/90 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col max-h-[42vh] lg:max-h-none overflow-hidden">
+        {/* Bloque de Herramientas de Dibujo Manual (Zonas de Camiones, Cuadrados, Notas) */}
+        <div className="p-3.5 border-b border-slate-800 bg-slate-950/60 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-mono text-cyan-400 tracking-wide">
+              DIBUJO MANUAL DE ZONAS Y NOTAS
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsDrawZoneMode((v) => !v)}
+              className={`flex items-center justify-center gap-1.5 px-2.5 py-2 text-[11px] font-semibold rounded border transition-colors cursor-pointer ${
+                isDrawZoneMode
+                  ? 'bg-amber-400 text-slate-950 border-amber-300'
+                  : 'bg-slate-900 text-amber-300 border-slate-700 hover:border-amber-400/70'
+              }`}
+            >
+              <PenTool className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">
+                {isDrawZoneMode ? 'Arrastra en Lienzo...' : 'Dibujar Zona/Cuadro'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleAddManualAnnotation('zone_box')}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-2 text-[11px] font-medium bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 rounded transition-colors cursor-pointer"
+            >
+              <PlusSquare className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span className="truncate">+ Zona Camiones</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleAddManualAnnotation('custom_block')}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded transition-colors cursor-pointer"
+            >
+              <PlusSquare className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="truncate">+ Bloque Libre</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleAddManualAnnotation('callout_note')}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded transition-colors cursor-pointer"
+            >
+              <StickyNote className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <span className="truncate">+ Nota Texto</span>
+            </button>
+          </div>
+        </div>
+
         <div className="p-3.5 border-b border-slate-800">
           <div className="text-[11px] font-mono text-cyan-400 tracking-wide">
-            PALETA DE EQUIPOS PFD
+            PALETA DE EQUIPOS INDUSTRIALES
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Arrastra al lienzo o haz clic en un equipo para insertarlo en el circuito.
+            Arrastra al lienzo o haz clic para insertar un equipo en el proceso.
           </p>
 
           {/* Pestañas de Categorías */}
-          <div className="grid grid-cols-2 gap-1 mt-3 bg-slate-950 p-1 rounded border border-slate-800">
+          <div className="grid grid-cols-2 gap-1 mt-2.5 bg-slate-950 p-1 rounded border border-slate-800">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat}
@@ -363,23 +565,22 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
         </div>
       </aside>
 
-      {/* CENTRO (Flex-1): Lienzo Interactivo PFD (Canvas) */}
+      {/* CENTRO (Flex-1): Lienzo Interactivo PFD (Canvas) con Descarga PDF Inmediata */}
       <section className="flex-1 flex flex-col min-w-0 relative bg-slate-950 overflow-hidden">
         {/* Sub-barra de Herramientas del Lienzo PFD */}
-        <div className="h-11 px-4 border-b border-slate-800 bg-slate-900/70 flex items-center justify-between gap-4 shrink-0">
+        <div className="min-h-11 px-4 py-1.5 border-b border-slate-800 bg-slate-900/70 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 overflow-x-auto">
             {/* Estado de Cierre del Flowsheet */}
             {unbalancedNodesCount === 0 ? (
               <div className="inline-flex items-center gap-1.5 text-xs font-mono text-emerald-400 whitespace-nowrap">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>CIERRE DE BALANCE: NOMINAL (ΣE = ΣS)</span>
+                <span>CIERRE NOMINAL (ΣE = ΣS)</span>
               </div>
             ) : (
               <div className="inline-flex items-center gap-1.5 text-xs font-mono text-rose-400 whitespace-nowrap">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>
-                  ALERTA DE CIERRE: {unbalancedNodesCount} NODO(S) FUERA DE TOLERANCIA (±
-                  {flowsheet.tolerance_pct}%)
+                  {unbalancedNodesCount} NODO(S) FUERA DE TOLERANCIA (±{flowsheet.tolerance_pct}%)
                 </span>
               </div>
             )}
@@ -388,11 +589,25 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
               |
             </span>
 
-            {/* Modo Conector de Corrientes */}
-            {connectingSourceNodeId ? (
+            {/* Instrucciones contextuales según modo */}
+            {isDrawZoneMode ? (
               <div className="flex items-center gap-2 text-xs text-amber-300 font-mono">
                 <span>
-                  Haz clic en el equipo de destino para conectar desde{' '}
+                  MODO DIBUJO ACTIVO: Haz clic y arrastra sobre el lienzo para trazar tu cuadrado o
+                  zona operativa...
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsDrawZoneMode(false)}
+                  className="px-2 py-0.5 bg-slate-800 text-slate-200 rounded hover:bg-slate-700 cursor-pointer"
+                >
+                  Salir
+                </button>
+              </div>
+            ) : connectingSourceNodeId ? (
+              <div className="flex items-center gap-2 text-xs text-amber-300 font-mono">
+                <span>
+                  Haz clic en el equipo destino para conectar desde{' '}
                   {nodeMap.get(connectingSourceNodeId)?.tag}...
                 </span>
                 <button
@@ -404,59 +619,66 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                 </button>
               </div>
             ) : (
-              <span className="text-xs text-slate-400 hidden xl:inline">
-                Haz clic en una corriente <strong className="text-slate-200">STR-###</strong> para
-                editar su pulpa o arrastra los equipos para organizar el diagrama.
+              <span className="text-xs text-slate-400 hidden 2xl:inline">
+                Haz clic en cualquier zona manual, equipo o corriente para editar sus textos y
+                parámetros.
               </span>
             )}
           </div>
 
-          {/* Controles de Zoom y Selección Rápida */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <select
-              aria-label="Seleccionar corriente rápidamente"
-              value={selectedStreamId ?? ''}
-              onChange={(e) => {
-                setSelectedStreamId(e.target.value || null);
-                setSelectedNodeId(null);
-              }}
-              className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-400"
+          {/* Botones Directos en el Lienzo: Descargar PDF con Sello TAGING + Planilla Excel + Zoom */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                exportFlowsheetToPrintablePdf(project, flowsheet, diagnostics)
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded transition-colors cursor-pointer whitespace-nowrap shadow-xs"
             >
-              <option value="">-- Seleccionar Corriente --</option>
-              {flowsheet.edges.map((edge) => (
-                <option key={edge.id} value={edge.id}>
-                  {edge.id}: {edge.name} ({edge.flow_data.solids_tph} t/h)
-                </option>
-              ))}
-            </select>
+              <FileText className="w-3.5 h-3.5" />
+              Descargar Lienzo PDF (Sello TAGING)
+            </button>
 
             <button
               type="button"
-              onClick={() => setZoom((z) => Math.max(0.65, +(z - 0.1).toFixed(2)))}
-              aria-label="Reducir zoom del lienzo"
-              className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-950 border border-slate-800 rounded cursor-pointer"
+              onClick={() =>
+                exportProfessionalExcelSheet(project, flowsheet, diagnostics)
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded transition-colors cursor-pointer whitespace-nowrap"
             >
-              <ZoomOut className="w-3.5 h-3.5" />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+              Planilla Excel (.XLS)
             </button>
-            <span className="text-xs font-mono text-slate-300 w-12 text-center tabular-nums">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => Math.min(1.35, +(z + 0.1).toFixed(2)))}
-              aria-label="Aumentar zoom del lienzo"
-              className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-950 border border-slate-800 rounded cursor-pointer"
-            >
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoom(1)}
-              aria-label="Restablecer zoom 100%"
-              className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-950 border border-slate-800 rounded cursor-pointer"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-            </button>
+
+            <div className="hidden sm:flex items-center gap-1 pl-1 border-l border-slate-800">
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.max(0.65, +(z - 0.1).toFixed(2)))}
+                aria-label="Reducir zoom del lienzo"
+                className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-950 border border-slate-800 rounded cursor-pointer"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-xs font-mono text-slate-300 w-11 text-center tabular-nums">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.min(1.35, +(z + 0.1).toFixed(2)))}
+                aria-label="Aumentar zoom del lienzo"
+                className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-950 border border-slate-800 rounded cursor-pointer"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoom(1)}
+                aria-label="Restablecer zoom 100%"
+                className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-950 border border-slate-800 rounded cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -466,18 +688,93 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
           data-testid="pfd-canvas-surface"
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleCanvasDrop}
+          onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
           className="flex-1 overflow-auto bg-pfd-grid bg-pfd-grid-major relative select-none cursor-crosshair"
         >
           <div
-            className="relative min-w-[1480px] min-h-[580px] origin-top-left transition-transform duration-75"
+            className="relative min-w-[1480px] min-h-[600px] origin-top-left transition-transform duration-75"
             style={{ transform: `scale(${zoom})` }}
           >
-            {/* CAPA SVG: Líneas Ortogonales de Corrientes (Streams) */}
+            {/* CAPA 1: ZONAS MANUALES / CUADRADOS DIBUJADOS / NOTAS (ej. Zona de Carga de Camiones) */}
+            {annotations.map((ann) => {
+              const isSelected = ann.id === selectedAnnotationId;
+              const themeClasses =
+                ann.color_theme === 'amber'
+                  ? 'border-amber-400/80 bg-amber-950/15 text-amber-300'
+                  : ann.color_theme === 'emerald'
+                  ? 'border-emerald-400/80 bg-emerald-950/15 text-emerald-300'
+                  : ann.color_theme === 'rose'
+                  ? 'border-rose-400/80 bg-rose-950/15 text-rose-300'
+                  : ann.color_theme === 'slate'
+                  ? 'border-slate-500/80 bg-slate-900/35 text-slate-200'
+                  : 'border-cyan-400/80 bg-cyan-950/15 text-cyan-300';
+
+              return (
+                <div
+                  key={ann.id}
+                  onMouseDown={(e) => handleAnnotationMouseDown(e, ann)}
+                  style={{
+                    left: `${ann.position_x}px`,
+                    top: `${ann.position_y}px`,
+                    width: `${ann.width}px`,
+                    height: `${ann.height}px`,
+                  }}
+                  className={`absolute rounded-md border-2 ${
+                    ann.kind === 'zone_box' ? 'border-dashed' : 'border-solid'
+                  } p-3 flex flex-col justify-between cursor-move transition-shadow ${themeClasses} ${
+                    isSelected ? 'ring-2 ring-white shadow-lg' : ''
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold tracking-wide uppercase font-display">
+                        {ann.title}
+                      </span>
+                      <span className="text-[10px] font-mono opacity-75 shrink-0">
+                        {ann.kind === 'zone_box'
+                          ? 'ZONA'
+                          : ann.kind === 'custom_block'
+                          ? 'BLOQUE'
+                          : 'NOTA'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300/95 leading-snug whitespace-pre-wrap">
+                      {ann.details}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[10px] font-mono opacity-60 pt-1">
+                    <span>
+                      {ann.width}×{ann.height} px
+                    </span>
+                    <span>Clic para editar texto/tamaño</span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Vista previa del rectángulo mientras el usuario dibuja con el mouse */}
+            {isDrawZoneMode && drawStartPt && drawCurrentPt && (
+              <div
+                style={{
+                  left: `${Math.min(drawStartPt.x, drawCurrentPt.x)}px`,
+                  top: `${Math.min(drawStartPt.y, drawCurrentPt.y)}px`,
+                  width: `${Math.abs(drawCurrentPt.x - drawStartPt.x)}px`,
+                  height: `${Math.abs(drawCurrentPt.y - drawStartPt.y)}px`,
+                }}
+                className="absolute border-2 border-dashed border-amber-400 bg-amber-400/15 rounded-md pointer-events-none flex items-center justify-center text-xs font-mono text-amber-200"
+              >
+                Nueva Zona Manual ({Math.abs(drawCurrentPt.x - drawStartPt.x)}×
+                {Math.abs(drawCurrentPt.y - drawStartPt.y)})
+              </div>
+            )}
+
+            {/* CAPA 2 (SVG): Líneas Ortogonales de Corrientes (Streams) */}
             <svg
-              className="absolute inset-0 w-[1480px] h-[580px] pointer-events-none"
-              viewBox="0 0 1480 580"
+              className="absolute inset-0 w-[1480px] h-[600px] pointer-events-none"
+              viewBox="0 0 1480 600"
             >
               <defs>
                 <marker
@@ -536,7 +833,6 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                 const x2 = tgt.position_x;
                 const y2 = tgt.position_y + 42;
 
-                // Enrutamiento ortogonal limpio
                 const midX = Math.round((x1 + x2) / 2 + ((idx % 3) - 1) * 8);
                 const pathD =
                   x2 >= x1 - 10
@@ -566,7 +862,6 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
 
                 return (
                   <g key={edge.id} className="pointer-events-auto">
-                    {/* Trazo ancho invisible para facilitar el clic sobre la corriente */}
                     <path
                       d={pathD}
                       fill="none"
@@ -576,6 +871,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                       onClick={() => {
                         setSelectedStreamId(edge.id);
                         setSelectedNodeId(null);
+                        setSelectedAnnotationId(null);
                       }}
                     />
                     <path
@@ -589,6 +885,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                       onClick={() => {
                         setSelectedStreamId(edge.id);
                         setSelectedNodeId(null);
+                        setSelectedAnnotationId(null);
                       }}
                     />
                   </g>
@@ -596,7 +893,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
               })}
             </svg>
 
-            {/* ETIQUETAS INTERACTIVAS DE CORRIENTE (STR-001, STR-002...) */}
+            {/* CAPA 3: ETIQUETAS INTERACTIVAS DE CORRIENTE (STR-001, STR-002...) */}
             {flowsheet.edges.map((edge, idx) => {
               const src = nodeMap.get(edge.source_node_id);
               const tgt = nodeMap.get(edge.target_node_id);
@@ -619,6 +916,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     e.stopPropagation();
                     setSelectedStreamId(edge.id);
                     setSelectedNodeId(null);
+                    setSelectedAnnotationId(null);
                   }}
                   aria-label={`Corriente ${edge.id} ${edge.name}`}
                   style={{
@@ -632,7 +930,11 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                   }`}
                 >
                   <div className="flex items-center justify-between text-[10px] font-mono">
-                    <span className={isSelected ? 'text-cyan-300 font-bold' : 'text-slate-200 font-semibold'}>
+                    <span
+                      className={
+                        isSelected ? 'text-cyan-300 font-bold' : 'text-slate-200 font-semibold'
+                      }
+                    >
                       {edge.id}
                     </span>
                     <span className="text-slate-400 tabular-nums">
@@ -648,13 +950,12 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
               );
             })}
 
-            {/* BLOQUES DE EQUIPOS EN EL LIENZO (EquipmentNode) */}
+            {/* CAPA 4: BLOQUES DE EQUIPOS EN EL LIENZO (EquipmentNode) */}
             {flowsheet.nodes.map((node) => {
               const diag = diagMap.get(node.id);
               const isSelected = node.id === selectedNodeId;
               const isConnectingSource = node.id === connectingSourceNodeId;
 
-              // Color de estado de cierre de balance en el nodo (Rojo / Ámbar / Verde / Frontera)
               const statusBorder =
                 diag?.status === 'unbalanced'
                   ? 'border-rose-500/90'
@@ -672,11 +973,10 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     left: `${node.position_x}px`,
                     top: `${node.position_y}px`,
                   }}
-                  className={`absolute w-[196px] rounded-md bg-slate-900/95 border-2 transition-shadow cursor-grab active:cursor-grabbing ${statusBorder} ${
+                  className={`absolute z-10 w-[196px] rounded-md bg-slate-900/95 border-2 transition-shadow cursor-grab active:cursor-grabbing ${statusBorder} ${
                     isSelected ? 'ring-2 ring-cyan-400 shadow-lg' : ''
                   } ${isConnectingSource ? 'ring-2 ring-amber-400' : ''}`}
                 >
-                  {/* Barra Superior del Equipo: Tag + Estado de Cierre */}
                   <div className="px-2.5 py-1 border-b border-slate-800 flex items-center justify-between text-[11px] font-mono">
                     <span className="font-bold text-cyan-400">{node.tag}</span>
                     {diag && !diag.isBoundary && (
@@ -702,7 +1002,6 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     )}
                   </div>
 
-                  {/* Cuerpo Principal: Símbolo PFD + Nombre Equipo */}
                   <div className="p-2.5 flex items-center gap-2.5">
                     <div className="p-1.5 rounded bg-slate-950 text-slate-200 border border-slate-800 shrink-0">
                       <EquipmentSymbolSvg type={node.type} className="w-7 h-7" />
@@ -717,7 +1016,6 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     </div>
                   </div>
 
-                  {/* Barra Inferior del Nodo: Botón Conectar Salida + Resumen Flujo */}
                   <div className="px-2.5 py-1 bg-slate-950/90 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400">
                     <span className="tabular-nums">
                       E:{diag?.inCount ?? 0} · S:{diag?.outCount ?? 0}
@@ -741,17 +1039,154 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                 </div>
               );
             })}
+
+            {/* CAJETÍN / SELLO CORPORATIVO DE TAGING EN LA ESQUINA DEL LIENZO PFD */}
+            <div className="absolute right-6 bottom-6 z-20 pointer-events-none bg-slate-950/90 border border-slate-800 rounded-md px-4 py-2.5 flex items-center gap-4 shadow-lg">
+              <TagingBrandLogo size="sm" showSubtitle />
+              <div className="border-l border-slate-800 pl-3 text-[10px] font-mono text-slate-400 space-y-0.5">
+                <div className="text-slate-200 font-semibold">{project.code}</div>
+                <div>{project.client}</div>
+                <div className="text-cyan-400">{flowsheet.version}</div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* COLUMNA DERECHA (380px): Inspector de Balance de Masa por Corriente / Nodo */}
+      {/* COLUMNA DERECHA (380px): Inspector de Zonas Manuales, Corrientes o Equipos */}
       <aside className="w-full lg:w-[380px] shrink-0 bg-slate-900/95 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col overflow-y-auto">
-        {selectedStream ? (
+        {selectedAnnotation ? (
+          <div className="p-4 space-y-5">
+            {/* Inspector de Zona Manual / Cuadrado Dibujado / Nota */}
+            <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <div className="text-xs font-mono text-amber-400">
+                  ELEMENTO MANUAL DEL LIENZO
+                </div>
+                <h3 className="text-sm font-semibold text-slate-100 mt-0.5">
+                  Personalizar Zona, Cuadro o Nota
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={handleDeleteSelectedAnnotation}
+                aria-label="Eliminar zona o nota manual"
+                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              <div>
+                <label htmlFor="ann-title" className="block text-xs text-slate-300 mb-1">
+                  Título / Nombre de la Zona o Bloque
+                </label>
+                <input
+                  id="ann-title"
+                  type="text"
+                  value={selectedAnnotation.title}
+                  onChange={(e) =>
+                    handleUpdateSelectedAnnotation({ title: e.target.value })
+                  }
+                  placeholder="Ej: ZONA DE CARGA DE CAMIONES CAEX"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded text-xs font-semibold text-slate-100 focus:border-cyan-400 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="ann-details" className="block text-xs text-slate-300 mb-1">
+                  Detalles, Especificaciones o Texto Libre
+                </label>
+                <textarea
+                  id="ann-details"
+                  rows={4}
+                  value={selectedAnnotation.details}
+                  onChange={(e) =>
+                    handleUpdateSelectedAnnotation({ details: e.target.value })
+                  }
+                  placeholder="Escribe aquí cualquier detalle: capacidad de camiones, ley de corte, dimensiones de acopio, notas para el cliente..."
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded text-xs text-slate-200 focus:border-cyan-400 focus:outline-none leading-relaxed"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="ann-width" className="block text-[11px] text-slate-400 mb-1">
+                    Ancho del Cuadro (px)
+                  </label>
+                  <input
+                    id="ann-width"
+                    type="number"
+                    step="15"
+                    min="120"
+                    max="1200"
+                    value={selectedAnnotation.width}
+                    onChange={(e) =>
+                      handleUpdateSelectedAnnotation({
+                        width: Math.max(120, Number(e.target.value) || 240),
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-slate-100 tabular-nums"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="ann-height" className="block text-[11px] text-slate-400 mb-1">
+                    Alto del Cuadro (px)
+                  </label>
+                  <input
+                    id="ann-height"
+                    type="number"
+                    step="15"
+                    min="70"
+                    max="600"
+                    value={selectedAnnotation.height}
+                    onChange={(e) =>
+                      handleUpdateSelectedAnnotation({
+                        height: Math.max(70, Number(e.target.value) || 140),
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-slate-100 tabular-nums"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-slate-400 mb-1.5">
+                  Color Demarcatorio en Lienzo y PDF
+                </label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {(
+                    [
+                      { id: 'amber', label: 'Ámbar' },
+                      { id: 'cyan', label: 'Cian' },
+                      { id: 'emerald', label: 'Verde' },
+                      { id: 'rose', label: 'Rojo' },
+                      { id: 'slate', label: 'Gris' },
+                    ] as const
+                  ).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => handleUpdateSelectedAnnotation({ color_theme: c.id })}
+                      className={`py-1.5 px-2 rounded text-[11px] font-medium border cursor-pointer ${
+                        selectedAnnotation.color_theme === c.id
+                          ? 'bg-slate-800 border-cyan-400 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : selectedStream ? (
           <div className="p-4 space-y-5">
             {/* Encabezado del Inspector de Corriente */}
             <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-3">
-              <div>
+              <div className="flex-1">
                 <div className="flex items-center gap-2 text-xs font-mono text-cyan-400">
                   <span>CORRIENTE {selectedStream.id}</span>
                   <span>·</span>
@@ -1028,14 +1463,40 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
           </div>
         ) : selectedNode && selectedNodeDiag ? (
           <div className="p-4 space-y-5">
-            {/* Inspector de Equipo y Verificación de Cierre de Balance */}
+            {/* Inspector Editable de Equipo y Verificación de Cierre de Balance */}
             <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-3">
-              <div>
-                <div className="text-xs font-mono text-cyan-400">{selectedNode.tag}</div>
-                <h3 className="text-sm font-semibold text-slate-100 mt-0.5">
-                  {selectedNode.name}
-                </h3>
-                <div className="text-xs text-slate-400">{selectedNode.category}</div>
+              <div className="flex-1 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    aria-label="Tag del equipo"
+                    value={selectedNode.tag}
+                    onChange={(e) =>
+                      onUpdateFlowsheet({
+                        ...flowsheet,
+                        nodes: flowsheet.nodes.map((n) =>
+                          n.id === selectedNode.id ? { ...n, tag: e.target.value } : n
+                        ),
+                      })
+                    }
+                    className="w-24 px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono font-bold text-cyan-400"
+                  />
+                  <span className="text-xs text-slate-400">{selectedNode.category}</span>
+                </div>
+                <input
+                  type="text"
+                  aria-label="Nombre personalizado del equipo"
+                  value={selectedNode.name}
+                  onChange={(e) =>
+                    onUpdateFlowsheet({
+                      ...flowsheet,
+                      nodes: flowsheet.nodes.map((n) =>
+                        n.id === selectedNode.id ? { ...n, name: e.target.value } : n
+                      ),
+                    })
+                  }
+                  className="w-full px-2 py-1 bg-slate-950 border border-slate-700 rounded text-xs font-semibold text-slate-100"
+                />
               </div>
               <button
                 type="button"
@@ -1105,19 +1566,6 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     {selectedNodeDiag.waterOut_m3h.toFixed(2)} m³/h
                   </span>
                 </div>
-                <div className="flex justify-between border-t border-slate-800 pt-1">
-                  <span className="text-slate-400">Discrepancia Agua:</span>
-                  <span
-                    className={`tabular-nums ${
-                      selectedNodeDiag.waterError_pct <= flowsheet.tolerance_pct
-                        ? 'text-emerald-400'
-                        : 'text-rose-400'
-                    }`}
-                  >
-                    {selectedNodeDiag.waterDelta_m3h.toFixed(2)} m³/h (
-                    {selectedNodeDiag.waterError_pct.toFixed(2)}%)
-                  </span>
-                </div>
               </div>
 
               {!selectedNodeDiag.isBalanced && !selectedNodeDiag.isBoundary && (
@@ -1164,8 +1612,10 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
         ) : (
           <div className="p-6 text-center text-xs text-slate-400 space-y-2">
             <p>
-              Selecciona cualquier corriente <strong className="text-slate-200">STR-###</strong> o
-              bloque de equipo en el lienzo PFD para inspeccionar y calcular su balance de masa.
+              Selecciona cualquier <strong className="text-amber-300">Zona Manual</strong>,{' '}
+              <strong className="text-cyan-300">Corriente STR-###</strong> o{' '}
+              <strong className="text-slate-200">Equipo</strong> en el lienzo PFD para editar sus
+              textos, dimensiones o balance de masa.
             </p>
           </div>
         )}
@@ -1183,6 +1633,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                 onClick={() => {
                   setSelectedNodeId(d.nodeId);
                   setSelectedStreamId(null);
+                  setSelectedAnnotationId(null);
                 }}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-xs font-mono transition-colors cursor-pointer"
               >

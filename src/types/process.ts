@@ -96,6 +96,18 @@ export interface StreamEdge {
   flow_data: StreamFlowData;
 }
 
+export interface CanvasAnnotation {
+  id: string;
+  kind: 'zone_box' | 'callout_note' | 'custom_block';
+  title: string;               // Ej: ZONA DE CARGA DE CAMIONES / ÁREA STOCKPILE
+  details: string;             // Texto libre, capacidades, notas operativas
+  position_x: number;
+  position_y: number;
+  width: number;
+  height: number;
+  color_theme: 'cyan' | 'amber' | 'emerald' | 'slate' | 'rose';
+}
+
 export interface Flowsheet {
   id: string;
   project_id: string;
@@ -103,6 +115,7 @@ export interface Flowsheet {
   tolerance_pct: number;       // Tolerancia de cierre de balance (ej. 0.1%)
   nodes: EquipmentNode[];
   edges: StreamEdge[];
+  annotations?: CanvasAnnotation[];
 }
 
 export interface Project {
