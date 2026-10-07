@@ -75,10 +75,69 @@ export interface StreamFlowData {
   assay: AssayValues;          // Leyes de Mineral / Elementos de Interés
 }
 
+export type CadMaterialStyle =
+  | 'machinery_gold'   // Acero Ocre / Amarillo Maquinaria con degradado 3D
+  | 'motor_blue'       // Azul Motor Eléctrico / Accionamiento
+  | 'dark_steel'       // Acero Carbono / Gris Oscuro
+  | 'process_cyan';    // Cian / Verde Proceso (Tuberías, Rebose, Espuma)
+
+export type CadPrimitiveKind =
+  | 'drum_rect'        // Cilindro / Tambor / Cuerpo rectangular
+  | 'hopper_trapezoid' // Tolva / Cono / Chute trapezoidal
+  | 'flywheel_circle'  // Volante / Rodillo / Impulsor circular
+  | 'pipe_line'        // Tubería / Eje / Línea ortogonal
+  | 'polygon_free'     // Polilínea / Polígono libre punto por punto
+  | 'motor_drive'      // Sello rápido: Motor eléctrico con aletas
+  | 'skid_base';       // Sello rápido: Bastidor / Base estructural
+
+export interface CustomCadPrimitive {
+  id: string;
+  kind: CadPrimitiveKind;
+  material: CadMaterialStyle;
+  x: number;           // Coordenada en canvas CAD (0..180)
+  y: number;           // Coordenada en canvas CAD (0..110)
+  w: number;           // Ancho en canvas CAD
+  h: number;           // Alto en canvas CAD
+  x2?: number;         // Punto final X para líneas/tuberías
+  y2?: number;         // Punto final Y para líneas/tuberías
+  points?: Array<{ x: number; y: number }>; // Vértices para polígono libre / trapecio
+  hasBolts?: boolean;  // Dibujar pernos/liners metálicos sobre el manto
+  topRatio?: number;   // Para conos/tolvas: ancho superior vs inferior (0.2 a 1.5)
+}
+
+export interface CustomInputFieldDef {
+  id: string;
+  label: string;       // Ej: "Tiempo de Residencia", "Presión Hidráulica", "Dosis Ácido"
+  unit: string;        // Ej: "min", "bar", "kg/t", "m³/h"
+  defaultValue: number;
+  roleImpact?: 'none' | 'added_water_m3h' | 'split_pct' | 'target_cp_pct';
+}
+
+export interface CustomEquipmentDrawing {
+  primitives: CustomCadPrimitive[];
+  dimensions: {
+    width_m: number;     // Ancho o Diámetro real (m)
+    height_m: number;    // Alto o Largo real (m)
+    volume_m3?: number;  // Volumen útil opcional (m³)
+  };
+  unitRole: UnitOperationRole;
+  inletCount: number;    // Cantidad de entradas (1 a 3)
+  outletCount: number;   // Cantidad de salidas (1 a 3)
+  customInputs: CustomInputFieldDef[];
+}
+
 export interface EquipmentParameters {
   // Capacidad y Potencia
   capacity_max_tph?: number;
   power_kw?: number;
+
+  // Medidas Físicas Personalizadas (m / m³)
+  dim_width_m?: number;
+  dim_height_m?: number;
+  dim_volume_m3?: number;
+
+  // Valores de Inputs Personalizados definidos en el creador CAD
+  custom_input_values?: Record<string, number>;
 
   // 1. Parámetros para Alimentación Inicial (feed_generator)
   feed_solids_tph?: number;       // Flujo inicial de sólidos (t/h)
@@ -120,6 +179,7 @@ export interface EquipmentNode {
   position_x: number;
   position_y: number;
   parameters: EquipmentParameters;
+  custom_drawing?: CustomEquipmentDrawing; // Si el usuario lo dibujó en el Estudio CAD
 }
 
 export interface StreamEdge {

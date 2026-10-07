@@ -4,23 +4,349 @@
  */
 
 import React from 'react';
-import { EquipmentSubType } from '../types/process';
+import {
+  CadMaterialStyle,
+  CustomEquipmentDrawing,
+  EquipmentSubType,
+} from '../types/process';
 
 interface EquipmentIconProps {
   type: EquipmentSubType;
   className?: string;
+  customDrawing?: CustomEquipmentDrawing;
+  showDimensionsOverlay?: boolean;
+}
+
+function getMaterialFillAndStroke(material: CadMaterialStyle, gradPrefix: string) {
+  switch (material) {
+    case 'machinery_gold':
+      return {
+        fill: `url(#${gradPrefix}-gold)`,
+        stroke: '#713F12',
+        accent: '#FDE047',
+      };
+    case 'motor_blue':
+      return {
+        fill: `url(#${gradPrefix}-blue)`,
+        stroke: '#0F172A',
+        accent: '#60A5FA',
+      };
+    case 'dark_steel':
+      return {
+        fill: `url(#${gradPrefix}-steel)`,
+        stroke: '#0F172A',
+        accent: '#94A3B8',
+      };
+    case 'process_cyan':
+    default:
+      return {
+        fill: `url(#${gradPrefix}-cyan)`,
+        stroke: '#0369A1',
+        accent: '#38BDF8',
+      };
+  }
 }
 
 /**
  * Gráficos Industriales Ilustrados de Cuerpo Completo para Diagramas de Flujo Mineros (PFD)
- * Inspirados en software metalúrgico industrial (Metsim / JKSimMet / Bruno):
- * - Sin cajas contenedoras artificiales: el propio equipo (tambor amarillo con pernos, chute de alimentación,
- *   motor azul, bastidor metálico, cono ciclónico, tanque con espuma) ES la figura principal del nodo.
+ * Soporta tanto la librería estándar como los equipos dibujados desde cero por el usuario en el Estudio CAD,
+ * aplicando automáticamente el mismo estilo industrial 3D (degradados metálicos, pernos, motores azules y puertos).
  */
 export const EquipmentSymbolSvg: React.FC<EquipmentIconProps> = ({
   type,
   className = 'w-full h-full',
+  customDrawing,
+  showDimensionsOverlay = false,
 }) => {
+  // Si el equipo fue diseñado a medida en el Estudio CAD, renderizamos sus primitivas con auto-estilo industrial
+  if (customDrawing && customDrawing.primitives.length > 0) {
+    const gradId = 'cad-ind';
+    const inPorts = Math.max(1, Math.min(3, customDrawing.inletCount || 1));
+    const outPorts = Math.max(1, Math.min(3, customDrawing.outletCount || 1));
+
+    return (
+      <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+        <defs>
+          <linearGradient id={`${gradId}-gold`} x1="0" y1="10" x2="0" y2="95" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#FDE047" />
+            <stop offset="35%" stopColor="#EAB308" />
+            <stop offset="80%" stopColor="#CA8A04" />
+            <stop offset="100%" stopColor="#854D0E" />
+          </linearGradient>
+          <linearGradient id={`${gradId}-blue`} x1="0" y1="15" x2="0" y2="95" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#2563EB" />
+            <stop offset="50%" stopColor="#1D4ED8" />
+            <stop offset="100%" stopColor="#1E3A8A" />
+          </linearGradient>
+          <linearGradient id={`${gradId}-steel`} x1="0" y1="15" x2="0" y2="95" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#475569" />
+            <stop offset="55%" stopColor="#334155" />
+            <stop offset="100%" stopColor="#0F172A" />
+          </linearGradient>
+          <linearGradient id={`${gradId}-cyan`} x1="0" y1="15" x2="0" y2="95" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#38BDF8" />
+            <stop offset="60%" stopColor="#0284C7" />
+            <stop offset="100%" stopColor="#0369A1" />
+          </linearGradient>
+        </defs>
+
+        {/* Dibujo de cada pieza CAD con sombreado industrial y pernos */}
+        {customDrawing.primitives.map((prim) => {
+          const style = getMaterialFillAndStroke(prim.material, gradId);
+
+          if (prim.kind === 'drum_rect') {
+            const boltCols = [prim.x + prim.w * 0.25, prim.x + prim.w * 0.5, prim.x + prim.w * 0.75];
+            const boltRows = [prim.y + prim.h * 0.22, prim.y + prim.h * 0.5, prim.y + prim.h * 0.78];
+            return (
+              <g key={prim.id}>
+                {/* Bridas laterales automáticas estilo tambor minero */}
+                <rect
+                  x={prim.x - 2.5}
+                  y={prim.y - 2}
+                  width={3}
+                  height={prim.h + 4}
+                  fill={style.fill}
+                  stroke={style.stroke}
+                  strokeWidth="1.2"
+                />
+                <rect
+                  x={prim.x + prim.w - 0.5}
+                  y={prim.y - 2}
+                  width={3}
+                  height={prim.h + 4}
+                  fill={style.fill}
+                  stroke={style.stroke}
+                  strokeWidth="1.2"
+                />
+                <rect
+                  x={prim.x}
+                  y={prim.y}
+                  width={prim.w}
+                  height={prim.h}
+                  rx="2"
+                  fill={style.fill}
+                  stroke={style.stroke}
+                  strokeWidth="1.6"
+                />
+                {prim.hasBolts !== false && prim.w >= 26 && prim.h >= 20 && (
+                  <g>
+                    {boltCols.map((bx, ci) => (
+                      <g key={ci}>
+                        <line
+                          x1={bx}
+                          y1={prim.y}
+                          x2={bx}
+                          y2={prim.y + prim.h}
+                          stroke={style.stroke}
+                          strokeWidth="0.9"
+                          strokeOpacity="0.55"
+                        />
+                        {boltRows.map((by, ri) => (
+                          <circle
+                            key={ri}
+                            cx={bx}
+                            cy={by}
+                            r="1.6"
+                            fill="#334155"
+                            stroke="#F8FAFC"
+                            strokeWidth="0.55"
+                          />
+                        ))}
+                      </g>
+                    ))}
+                  </g>
+                )}
+              </g>
+            );
+          }
+
+          if (prim.kind === 'hopper_trapezoid') {
+            const topRatio = prim.topRatio ?? 1.0;
+            // Si topRatio === 1 hacemos tolva o cono inferior; por defecto cono angosto abajo (60%)
+            const insetBottom = prim.w * (topRatio < 1 ? 0.08 : 0.28);
+            const insetTop = prim.w * (topRatio < 1 ? 0.28 : 0.04);
+            const pts = `${prim.x + insetTop},${prim.y} ${prim.x + prim.w - insetTop},${prim.y} ${
+              prim.x + prim.w - insetBottom
+            },${prim.y + prim.h} ${prim.x + insetBottom},${prim.y + prim.h}`;
+            return (
+              <g key={prim.id}>
+                <polygon
+                  points={pts}
+                  fill={style.fill}
+                  stroke={style.stroke}
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+                <line
+                  x1={prim.x + prim.w / 2}
+                  y1={prim.y + 2}
+                  x2={prim.x + prim.w / 2}
+                  y2={prim.y + prim.h - 2}
+                  stroke={style.accent}
+                  strokeWidth="0.9"
+                  strokeOpacity="0.45"
+                />
+              </g>
+            );
+          }
+
+          if (prim.kind === 'flywheel_circle') {
+            const cx = prim.x + prim.w / 2;
+            const cy = prim.y + prim.h / 2;
+            const r = Math.max(6, Math.min(prim.w, prim.h) / 2);
+            return (
+              <g key={prim.id}>
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={r}
+                  fill={style.fill}
+                  stroke={style.stroke}
+                  strokeWidth="1.8"
+                />
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={r * 0.65}
+                  stroke={style.accent}
+                  strokeWidth="1.2"
+                  strokeDasharray="4 2"
+                />
+                <circle cx={cx} cy={cy} r={Math.max(2.5, r * 0.22)} fill="#38BDF8" />
+              </g>
+            );
+          }
+
+          if (prim.kind === 'motor_drive') {
+            return (
+              <g key={prim.id}>
+                <rect
+                  x={prim.x}
+                  y={prim.y}
+                  width={prim.w}
+                  height={prim.h}
+                  rx="2.5"
+                  fill={`url(#${gradId}-blue)`}
+                  stroke="#0F172A"
+                  strokeWidth="1.4"
+                />
+                <line
+                  x1={prim.x + 3}
+                  y1={prim.y + prim.h * 0.28}
+                  x2={prim.x + prim.w - 3}
+                  y2={prim.y + prim.h * 0.28}
+                  stroke="#93C5FD"
+                  strokeWidth="1.1"
+                />
+                <line
+                  x1={prim.x + 3}
+                  y1={prim.y + prim.h * 0.55}
+                  x2={prim.x + prim.w - 3}
+                  y2={prim.y + prim.h * 0.55}
+                  stroke="#1E3A8A"
+                  strokeWidth="1.1"
+                />
+                <line
+                  x1={prim.x + 3}
+                  y1={prim.y + prim.h * 0.78}
+                  x2={prim.x + prim.w - 3}
+                  y2={prim.y + prim.h * 0.78}
+                  stroke="#1E3A8A"
+                  strokeWidth="1.1"
+                />
+              </g>
+            );
+          }
+
+          if (prim.kind === 'skid_base') {
+            const pts = `${prim.x},${prim.y} ${prim.x + prim.w},${prim.y} ${
+              prim.x + prim.w - 5
+            },${prim.y + prim.h} ${prim.x + 5},${prim.y + prim.h}`;
+            return (
+              <polygon
+                key={prim.id}
+                points={pts}
+                fill={`url(#${gradId}-gold)`}
+                stroke="#713F12"
+                strokeWidth="1.5"
+              />
+            );
+          }
+
+          if (prim.kind === 'pipe_line') {
+            const x2 = prim.x2 ?? prim.x + prim.w;
+            const y2 = prim.y2 ?? prim.y + prim.h;
+            return (
+              <g key={prim.id}>
+                <line
+                  x1={prim.x}
+                  y1={prim.y}
+                  x2={x2}
+                  y2={y2}
+                  stroke={style.stroke}
+                  strokeWidth="5.5"
+                  strokeLinecap="round"
+                />
+                <line
+                  x1={prim.x}
+                  y1={prim.y}
+                  x2={x2}
+                  y2={y2}
+                  stroke={style.accent}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              </g>
+            );
+          }
+
+          if (prim.kind === 'polygon_free' && prim.points && prim.points.length >= 2) {
+            const ptsStr = prim.points.map((pt) => `${pt.x},${pt.y}`).join(' ');
+            return (
+              <polygon
+                key={prim.id}
+                points={ptsStr}
+                fill={style.fill}
+                stroke={style.stroke}
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
+            );
+          }
+
+          return null;
+        })}
+
+        {/* Bridas de Conexión de Entrada (Izquierda) y Salida (Derecha) */}
+        {Array.from({ length: inPorts }).map((_, i) => {
+          const py = inPorts === 1 ? 52 : 30 + i * 24;
+          return (
+            <g key={`in-port-${i}`}>
+              <rect x="6" y={py - 4} width="7" height="8" rx="1" fill="#0284C7" stroke="#E0F2FE" strokeWidth="0.9" />
+            </g>
+          );
+        })}
+        {Array.from({ length: outPorts }).map((_, i) => {
+          const py = outPorts === 1 ? 52 : 30 + i * 24;
+          return (
+            <g key={`out-port-${i}`}>
+              <rect x="167" y={py - 4} width="7" height="8" rx="1" fill="#10B981" stroke="#D1FAE5" strokeWidth="0.9" />
+            </g>
+          );
+        })}
+
+        {/* Cotas Técnicas estilo AutoCAD (Ancho × Alto en metros) */}
+        {showDimensionsOverlay && (
+          <g>
+            <line x1="22" y1="104" x2="158" y2="104" stroke="#22D3EE" strokeWidth="1" strokeDasharray="3 2" />
+            <text x="90" y="102" fill="#22D3EE" fontSize="8" fontFamily="monospace" textAnchor="middle">
+              {customDrawing.dimensions.width_m}m × {customDrawing.dimensions.height_m}m
+            </text>
+          </g>
+        )}
+      </svg>
+    );
+  }
   switch (type) {
     case 'mill_sag':
     case 'mill_ball':

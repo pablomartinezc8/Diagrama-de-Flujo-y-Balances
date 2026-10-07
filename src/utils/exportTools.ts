@@ -5,6 +5,7 @@
 
 import { jsPDF } from 'jspdf';
 import {
+  CustomEquipmentDrawing,
   EquipmentSubType,
   Flowsheet,
   NodeBalanceDiagnostics,
@@ -34,10 +35,55 @@ function drawPdfEquipmentSymbol(
   cx: number,
   cy: number,
   w: number,
-  h: number
+  h: number,
+  customDrawing?: CustomEquipmentDrawing
 ): void {
   const rx = w / 2;
   const ry = h / 2;
+
+  // Si el equipo fue diseñado a medida en el Estudio CAD, dibujamos sus primitivas en el PDF
+  if (customDrawing && customDrawing.primitives.length > 0) {
+    const left = cx - rx;
+    const top = cy - ry;
+    const sx = w / 180;
+    const sy = h / 110;
+
+    for (const prim of customDrawing.primitives) {
+      if (prim.material === 'motor_blue') {
+        doc.setFillColor(29, 78, 216);
+        doc.setDrawColor(15, 23, 42);
+      } else if (prim.material === 'dark_steel') {
+        doc.setFillColor(51, 65, 85);
+        doc.setDrawColor(15, 23, 42);
+      } else if (prim.material === 'process_cyan') {
+        doc.setFillColor(2, 132, 199);
+        doc.setDrawColor(3, 105, 161);
+      } else {
+        doc.setFillColor(234, 179, 8);
+        doc.setDrawColor(113, 63, 18);
+      }
+      doc.setLineWidth(0.28);
+
+      const px = left + prim.x * sx;
+      const py = top + prim.y * sy;
+      const pw = prim.w * sx;
+      const ph = prim.h * sy;
+
+      if (prim.kind === 'drum_rect' || prim.kind === 'motor_drive' || prim.kind === 'skid_base') {
+        doc.rect(px, py, pw, ph, 'FD');
+      } else if (prim.kind === 'hopper_trapezoid') {
+        doc.triangle(px, py, px + pw, py, px + pw / 2, py + ph, 'FD');
+      } else if (prim.kind === 'flywheel_circle') {
+        doc.circle(px + pw / 2, py + ph / 2, Math.min(pw, ph) / 2, 'FD');
+      } else if (prim.kind === 'pipe_line') {
+        const x2 = left + (prim.x2 ?? prim.x + prim.w) * sx;
+        const y2 = top + (prim.y2 ?? prim.y + prim.h) * sy;
+        doc.setLineWidth(0.5);
+        doc.line(px, py, x2, y2);
+      }
+    }
+    return;
+  }
 
   switch (type) {
     case 'mill_sag':
@@ -653,7 +699,8 @@ export function exportFlowsheetToPrintablePdf(
       nx + nw / 2,
       ny + topBoxH + (nh - topBoxH - 4) * 0.52,
       nw * 0.88,
-      (nh - topBoxH - 4) * 0.92
+      (nh - topBoxH - 4) * 0.92,
+      node.custom_drawing
     );
 
     // 3c) Etiqueta inferior con el Nombre Completo del Equipo

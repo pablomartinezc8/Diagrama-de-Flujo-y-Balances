@@ -14,9 +14,15 @@ import {
 } from '../types/process';
 
 /**
- * Determina el rol de operación unitaria de cada tipo de equipo
+ * Determina el rol de operación unitaria de cada tipo de equipo (o usa el rol configurado en el Estudio CAD)
  */
-export function getEquipmentUnitRole(type: EquipmentSubType): UnitOperationRole {
+export function getEquipmentUnitRole(
+  type: EquipmentSubType,
+  node?: EquipmentNode
+): UnitOperationRole {
+  if (node?.custom_drawing?.unitRole) {
+    return node.custom_drawing.unitRole;
+  }
   switch (type) {
     case 'feed_source':
       return 'feed_generator';
@@ -331,7 +337,7 @@ export function reconcileFlowsheetMassBalance(flowsheet: Flowsheet): Flowsheet {
     for (const node of flowsheet.nodes) {
       const inEdges = updatedEdges.filter((e) => e.target_node_id === node.id);
       const outEdges = updatedEdges.filter((e) => e.source_node_id === node.id);
-      const role = getEquipmentUnitRole(node.type);
+      const role = getEquipmentUnitRole(node.type, node);
       const p = node.parameters;
 
       // 1. NODO GENERADOR DE ALIMENTACIÓN (Feed Source)

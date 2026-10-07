@@ -3,7 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EquipmentCategory, EquipmentSubType, Flowsheet, Project } from '../types/process';
+import {
+  CustomEquipmentDrawing,
+  EquipmentCategory,
+  EquipmentParameters,
+  EquipmentSubType,
+  Flowsheet,
+  Project,
+} from '../types/process';
 import { computeDerivedSlurryProperties } from '../utils/massBalanceMath';
 
 export interface EquipmentCatalogItem {
@@ -12,12 +19,8 @@ export interface EquipmentCatalogItem {
   name: string;
   prefix: string;
   description: string;
-  defaultParams: {
-    capacity_max_tph?: number;
-    power_kw?: number;
-    split_ratio_primary?: number;
-    target_underflow_cp?: number;
-  };
+  defaultParams: EquipmentParameters;
+  customDrawing?: CustomEquipmentDrawing;
 }
 
 export const EQUIPMENT_CATALOG: EquipmentCatalogItem[] = [

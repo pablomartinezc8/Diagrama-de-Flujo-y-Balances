@@ -58,6 +58,7 @@ import {
   getEquipmentUnitRole,
   reconcileFlowsheetMassBalance,
 } from '../utils/massBalanceMath';
+import { CustomEquipmentCadModal } from './CustomEquipmentCadModal';
 import { EquipmentSymbolSvg } from './EquipmentSymbols';
 import { TagingBrandLogo } from './TagingBrandLogo';
 
@@ -161,25 +162,8 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
     return item.category === activeCategory;
   });
 
-  // Guardar nuevo equipo personalizado en el catálogo y agregarlo al lienzo
-  const handleCreateCustomEquipmentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanName = newEquipName.trim() || equipmentSearch.trim() || 'Equipo Especial';
-    const cleanPrefix = (newEquipPrefix.trim() || 'EQ').toUpperCase().slice(0, 5);
-
-    const newCatalogItem: EquipmentCatalogItem = {
-      type: newEquipBaseType,
-      category: newEquipCategory,
-      name: cleanName,
-      prefix: cleanPrefix,
-      description: newEquipDesc.trim() || 'Unidad de proceso personalizada.',
-      defaultParams: {
-        capacity_max_tph: 1500,
-        split_ratio_primary: 0.5,
-        target_underflow_cp: 65,
-      },
-    };
-
+  // Guardar nuevo equipo diseñado en el Estudio CAD en el catálogo y agregarlo al lienzo
+  const handleSaveCustomEquipment = (newCatalogItem: EquipmentCatalogItem) => {
     const nextCustom = [newCatalogItem, ...customCatalog];
     setCustomCatalog(nextCustom);
     try {
@@ -208,6 +192,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
       position_x: posX ?? 380 + ((flowsheet.nodes.length * 45) % 450),
       position_y: posY ?? 150 + ((flowsheet.nodes.length * 35) % 220),
       parameters: { ...item.defaultParams },
+      custom_drawing: item.customDrawing,
     };
 
     onUpdateFlowsheet({
@@ -536,7 +521,9 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
 
   const internalDiagnostics = diagnostics.filter((d) => !d.isBoundary);
   const unbalancedNodesCount = internalDiagnostics.filter((d) => !d.isBalanced).length;
-  const selectedNodeRole = selectedNode ? getEquipmentUnitRole(selectedNode.type) : null;
+  const selectedNodeRole = selectedNode
+    ? getEquipmentUnitRole(selectedNode.type, selectedNode)
+    : null;
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-57px)] overflow-hidden bg-slate-950 relative">
@@ -622,9 +609,9 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                   setNewEquipName(equipmentSearch);
                   setIsCreateCustomEquipOpen(true);
                 }}
-                className="text-[11px] font-mono text-cyan-300 hover:text-cyan-200 underline cursor-pointer"
+                className="px-2 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-400 hover:text-slate-950 text-[11px] font-mono font-semibold text-cyan-300 border border-cyan-500/40 transition-colors cursor-pointer"
               >
-                + Crear Equipo
+                + Dibujar Equipo CAD
               </button>
             </div>
 
@@ -691,7 +678,11 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                 className="group flex items-center gap-3 p-2.5 rounded bg-slate-950/90 border border-slate-800/90 hover:border-cyan-500/70 hover:bg-slate-900 transition-colors cursor-pointer"
               >
                 <div className="w-16 h-11 flex items-center justify-center shrink-0">
-                  <EquipmentSymbolSvg type={item.type} className="w-full h-full" />
+                  <EquipmentSymbolSvg
+                    type={item.type}
+                    customDrawing={item.customDrawing}
+                    className="w-full h-full"
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1">
@@ -1244,10 +1235,12 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
 
               // Dato resumido clave que va dentro/sobre el cuerpo del equipo o en su placa
               const quickMetric =
-                node.parameters.feed_solids_tph !== undefined
+                node.parameters.dim_width_m && node.parameters.dim_height_m
+                  ? `${node.parameters.dim_width_m}×${node.parameters.dim_height_m}m`
+                  : node.parameters.feed_solids_tph !== undefined
                   ? `${node.parameters.feed_solids_tph} t/h`
                   : node.parameters.split_ratio_primary !== undefined
-                  ? `Split ${node.parameters.split_ratio_primary}%`
+                  ? `Split ${Math.round(node.parameters.split_ratio_primary * 100)}%`
                   : node.parameters.mass_pull_pct !== undefined
                   ? `Pull ${node.parameters.mass_pull_pct}%`
                   : node.parameters.target_underflow_cp !== undefined
@@ -1330,7 +1323,11 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                       isSelected ? 'drop-shadow-[0_0_12px_rgba(34,211,238,0.55)]' : ''
                     }`}
                   >
-                    <EquipmentSymbolSvg type={node.type} className="w-full h-full" />
+                    <EquipmentSymbolSvg
+                      type={node.type}
+                      customDrawing={node.custom_drawing}
+                      className="w-full h-full"
+                    />
 
                     {/* Placa compacta con parámetro operativo dentro del cuerpo del icono */}
                     {quickMetric && (
@@ -1394,7 +1391,11 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
               {/* 1. Identificación e Icono del Equipo Seleccionado */}
               <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
                 <div className="p-2 rounded bg-slate-950 border border-slate-800 text-cyan-300 shrink-0">
-                  <EquipmentSymbolSvg type={selectedNode.type} className="w-12 h-10" />
+                  <EquipmentSymbolSvg
+                    type={selectedNode.type}
+                    customDrawing={selectedNode.custom_drawing}
+                    className="w-14 h-10"
+                  />
                 </div>
                 <div className="flex-1 space-y-1.5">
                   <div className="flex items-center gap-2">
@@ -1901,6 +1902,142 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                         />
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* MEDIDAS FÍSICAS E INPUTS PERSONALIZADOS CREADOS EN EL ESTUDIO CAD */}
+                {selectedNode.custom_drawing && (
+                  <div className="pt-2.5 border-t border-slate-800 space-y-2.5">
+                    <div className="text-[11px] font-mono text-amber-300 font-semibold">
+                      DIMENSIONES CAD & INPUTS PROPIOS DEL EQUIPO
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-0.5">
+                          Ancho/Ø (m)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={
+                            selectedNode.parameters.dim_width_m ??
+                            selectedNode.custom_drawing.dimensions.width_m
+                          }
+                          onChange={(e) =>
+                            handleNodeParameterChange(
+                              'dim_width_m',
+                              parseFloat(e.target.value) || 1,
+                              false
+                            )
+                          }
+                          className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs font-mono text-amber-300 tabular-nums"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-0.5">
+                          Largo/Alto (m)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={
+                            selectedNode.parameters.dim_height_m ??
+                            selectedNode.custom_drawing.dimensions.height_m
+                          }
+                          onChange={(e) =>
+                            handleNodeParameterChange(
+                              'dim_height_m',
+                              parseFloat(e.target.value) || 1,
+                              false
+                            )
+                          }
+                          className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs font-mono text-amber-300 tabular-nums"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 mb-0.5">
+                          Volumen (m³)
+                        </label>
+                        <input
+                          type="number"
+                          step="5"
+                          value={
+                            selectedNode.parameters.dim_volume_m3 ??
+                            selectedNode.custom_drawing.dimensions.volume_m3 ??
+                            0
+                          }
+                          onChange={(e) =>
+                            handleNodeParameterChange(
+                              'dim_volume_m3',
+                              parseFloat(e.target.value) || 0,
+                              false
+                            )
+                          }
+                          className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs font-mono text-slate-200 tabular-nums"
+                        />
+                      </div>
+                    </div>
+
+                    {selectedNode.custom_drawing.customInputs.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2.5 pt-1">
+                        {selectedNode.custom_drawing.customInputs.map((inp) => {
+                          const currentVal =
+                            selectedNode.parameters.custom_input_values?.[inp.id] ??
+                            inp.defaultValue;
+
+                          return (
+                            <div key={inp.id}>
+                              <label className="block text-[11px] text-slate-300 mb-1 truncate">
+                                {inp.label} ({inp.unit})
+                              </label>
+                              <input
+                                type="number"
+                                step="any"
+                                value={currentVal}
+                                onChange={(e) => {
+                                  const num = parseFloat(e.target.value) || 0;
+                                  const nextCustomVals = {
+                                    ...(selectedNode.parameters.custom_input_values ?? {}),
+                                    [inp.id]: num,
+                                  };
+
+                                  const extraPatch: Partial<EquipmentParameters> = {
+                                    custom_input_values: nextCustomVals,
+                                  };
+                                  if (inp.roleImpact === 'added_water_m3h') {
+                                    extraPatch.added_water_m3h = num;
+                                  } else if (inp.roleImpact === 'split_pct') {
+                                    extraPatch.split_ratio_primary = Math.min(
+                                      0.95,
+                                      Math.max(0.05, num / 100)
+                                    );
+                                  } else if (inp.roleImpact === 'target_cp_pct') {
+                                    extraPatch.target_underflow_cp = num;
+                                  }
+
+                                  const updatedNodes = flowsheet.nodes.map((n) =>
+                                    n.id === selectedNode.id
+                                      ? {
+                                          ...n,
+                                          parameters: { ...n.parameters, ...extraPatch },
+                                        }
+                                      : n
+                                  );
+                                  onUpdateFlowsheet(
+                                    reconcileFlowsheetMassBalance({
+                                      ...flowsheet,
+                                      nodes: updatedNodes,
+                                    })
+                                  );
+                                }}
+                                className="w-full px-2.5 py-1.5 bg-slate-900 border border-cyan-500/50 rounded text-xs font-mono text-cyan-300 tabular-nums"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2448,135 +2585,13 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
         </aside>
       )}
 
-      {/* MODAL PARA CREAR Y AGREGAR UN NUEVO EQUIPO PERSONALIZADO DESDE EL BUSCADOR */}
+      {/* ESTUDIO CAD PARA DISEÑAR UN NUEVO EQUIPO DESDE CERO (Forma, Medidas e Inputs) */}
       {isCreateCustomEquipOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="modal-custom-equip-title"
-        >
-          <div className="bg-slate-900 border border-slate-700 rounded-md max-w-md w-full p-5 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h2 id="modal-custom-equip-title" className="text-base font-semibold text-slate-100">
-                Crear y Agregar Equipo al Catálogo
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsCreateCustomEquipOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-200 rounded cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateCustomEquipmentSubmit} className="space-y-3.5">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-xs text-slate-300 mb-1">
-                    Nombre del Equipo
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newEquipName}
-                    onChange={(e) => setNewEquipName(e.target.value)}
-                    placeholder="Ej: Tolva de Gruesos / Tambor Aglomerador"
-                    className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-300 mb-1">
-                    Prefijo Tag
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={5}
-                    value={newEquipPrefix}
-                    onChange={(e) => setNewEquipPrefix(e.target.value.toUpperCase())}
-                    placeholder="Ej: TG"
-                    className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-cyan-300"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-300 mb-1">
-                  Categoría del Proceso
-                </label>
-                <select
-                  value={newEquipCategory}
-                  onChange={(e) => setNewEquipCategory(e.target.value as EquipmentCategory)}
-                  className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-300 mb-1">
-                  Icono Técnico / Función de Cálculo Base
-                </label>
-                <select
-                  value={newEquipBaseType}
-                  onChange={(e) => setNewEquipBaseType(e.target.value as EquipmentSubType)}
-                  className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100"
-                >
-                  <option value="crusher_jaw">Silueta Chancador Mandíbula (Trituración + Bond)</option>
-                  <option value="crusher_cone">Silueta Chancador Cónico (Trituración + Bond)</option>
-                  <option value="mill_sag">Silueta Molino Rotatorio (Molienda + Agua Adicional)</option>
-                  <option value="mill_hpgr">Silueta Rodillos HPGR (Compresión)</option>
-                  <option value="screen_vibrating">Silueta Zaranda Vibratoria (Clasificación Tamaño)</option>
-                  <option value="hydrocyclone">Silueta Hidrociclón (Separación Finos/Gruesos)</option>
-                  <option value="flotation_rougher">Silueta Celda Flotación (Recuperación + Mass Pull)</option>
-                  <option value="thickener">Silueta Espesador Cono (Desaguado + %Cp Underflow)</option>
-                  <option value="filter_press">Silueta Filtro Prensa (Filtrado Queque)</option>
-                  <option value="leach_tank">Silueta Reactor / Tanque Agitado (Lixiviación)</option>
-                  <option value="slurry_pump">Silueta Bomba Centrífuga (Impulsión Pulpa)</option>
-                  <option value="conveyor_belt">Silueta Correa Transportadora (Manejo Sólidos)</option>
-                  <option value="feed_source">Silueta Alimentador / Camión ROM (Generador Flujo)</option>
-                  <option value="product_sink">Silueta Descarga / Stockpile Producto</option>
-                </select>
-              </div>
-
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded flex items-center gap-3">
-                <div className="p-2 bg-slate-900 rounded text-cyan-300 border border-slate-800">
-                  <EquipmentSymbolSvg type={newEquipBaseType} className="w-12 h-10" />
-                </div>
-                <div className="text-xs text-slate-300">
-                  <div className="font-semibold text-slate-100">
-                    Vista Previa del Icono PFD
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    Se agregará a la paleta y se insertará en el lienzo con sus fórmulas de
-                    balance activas.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateCustomEquipOpen(false)}
-                  className="px-3 py-1.5 text-xs text-slate-300 hover:text-slate-100 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 text-xs font-semibold bg-cyan-400 text-slate-950 rounded hover:bg-cyan-300 cursor-pointer"
-                >
-                  Guardar e Insertar en Lienzo
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <CustomEquipmentCadModal
+          initialName={newEquipName}
+          onClose={() => setIsCreateCustomEquipOpen(false)}
+          onSaveEquipment={handleSaveCustomEquipment}
+        />
       )}
     </div>
   );
