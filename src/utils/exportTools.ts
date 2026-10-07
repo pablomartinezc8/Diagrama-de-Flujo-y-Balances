@@ -264,6 +264,7 @@ export function exportProfessionalExcelSheet(
           <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; color: #475569; mso-number-format:'0\\.00';">${d.assay.au_gpt.toFixed(2)}</td>
           <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; color: #047857; mso-number-format:'0\\.000';">${d.assay.li_pct.toFixed(3)}</td>
           <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; color: #475569; mso-number-format:'0\\.00';">${d.assay.fe_pct.toFixed(2)}</td>
+          <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; color: #0E7490; mso-number-format:'0\\.0000';">${d.assay.mo_pct.toFixed(4)}</td>
           <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; font-weight: bold; color: #0F172A; mso-number-format:'0\\.000';">${cuFine.toFixed(3)}</td>
           <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; color: #475569; mso-number-format:'0\\.0';">${d.reagent_dosage_gpt.toFixed(1)}</td>
         </tr>
@@ -277,7 +278,14 @@ export function exportProfessionalExcelSheet(
       const bgRow = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
       const statusBg = n.isBalanced ? '#DCFCE7' : '#FEE2E2';
       const statusColor = n.isBalanced ? '#166534' : '#991B1B';
-      const statusText = n.isBalanced ? 'CERRADO OK (NOMINAL)' : 'DESBALANCEADO (REVISAR)';
+      const statusText = n.isBalanced
+        ? 'CERRADO OK (NOMINAL)'
+        : `DESBALANCE (${n.failingVariables.join(', ')})`;
+      const cuErr = n.elementChecks.find((c) => c.key === 'cu_pct')?.relativeError_pct ?? 0;
+      const auErr = n.elementChecks.find((c) => c.key === 'au_gpt')?.relativeError_pct ?? 0;
+      const liErr = n.elementChecks.find((c) => c.key === 'li_pct')?.relativeError_pct ?? 0;
+      const feErr = n.elementChecks.find((c) => c.key === 'fe_pct')?.relativeError_pct ?? 0;
+      const moErr = n.elementChecks.find((c) => c.key === 'mo_pct')?.relativeError_pct ?? 0;
 
       return `
         <tr style="background-color: ${bgRow};">
@@ -290,7 +298,13 @@ export function exportProfessionalExcelSheet(
           <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; color: #0284C7; mso-number-format:'\\#\\,\\#\\#0\\.00';">${n.waterIn_m3h.toFixed(2)}</td>
           <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; color: #0284C7; mso-number-format:'\\#\\,\\#\\#0\\.00';">${n.waterOut_m3h.toFixed(2)}</td>
           <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; mso-number-format:'0\\.00';">${n.waterError_pct.toFixed(2)}%</td>
-          <td style="border: 1px solid #CBD5E1; padding: 6px 10px; text-align: center; font-weight: bold; background-color: ${statusBg}; color: ${statusColor};" colspan="2">${statusText}</td>
+          <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; mso-number-format:'0\\.00';">${cuErr.toFixed(2)}%</td>
+          <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; mso-number-format:'0\\.00';">${auErr.toFixed(2)}%</td>
+          <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; mso-number-format:'0\\.00';">${liErr.toFixed(2)}%</td>
+          <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; mso-number-format:'0\\.00';">${feErr.toFixed(2)}%</td>
+          <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; mso-number-format:'0\\.00';">${moErr.toFixed(2)}%</td>
+          <td style="border: 1px solid #CBD5E1; padding: 6px 8px; text-align: right; font-weight: bold; color: ${statusColor}; mso-number-format:'0\\.00';">${n.maxError_pct.toFixed(2)}%</td>
+          <td style="border: 1px solid #CBD5E1; padding: 6px 10px; text-align: center; font-weight: bold; background-color: ${statusBg}; color: ${statusColor};" colspan="2">${escapeHtml(statusText)}</td>
         </tr>
       `;
     })
@@ -393,16 +407,17 @@ export function exportProfessionalExcelSheet(
             <th style="border: 1px solid #0369A1; padding: 8px;">Ley Au (g/t)</th>
             <th style="border: 1px solid #0369A1; padding: 8px;">Ley Li (%)</th>
             <th style="border: 1px solid #0369A1; padding: 8px;">Ley Fe (%)</th>
+            <th style="border: 1px solid #0369A1; padding: 8px;">Ley Mo (%)</th>
             <th style="border: 1px solid #0369A1; padding: 8px;">Cu Fino (t/h)</th>
             <th style="border: 1px solid #0369A1; padding: 8px;">Reactivos (g/t)</th>
           </tr>
           ${streamRowsHtml}
 
-          <tr><td colspan="18" style="height: 16px;"></td></tr>
+          <tr><td colspan="19" style="height: 16px;"></td></tr>
 
           <tr>
-            <td colspan="12" style="background-color: #0F172A; color: #FFFFFF; font-weight: bold; font-size: 13px; padding: 8px 12px; border: 1px solid #0F172A;">
-              2. VERIFICACIÓN DE CIERRE DE BALANCE POR EQUIPO / NODO (&Sigma; ENTRADAS = &Sigma; SALIDAS)
+            <td colspan="18" style="background-color: #0F172A; color: #FFFFFF; font-weight: bold; font-size: 13px; padding: 8px 12px; border: 1px solid #0F172A;">
+              2. VERIFICACIÓN DE CIERRE DE BALANCE POR EQUIPO / NODO (&Sigma; ENTRADAS = &Sigma; SALIDAS EN MASA, AGUA Y 5 ELEMENTOS)
             </td>
           </tr>
           <tr style="background-color: #1E293B; color: #FFFFFF; font-weight: bold; text-align: center;">
@@ -415,6 +430,12 @@ export function exportProfessionalExcelSheet(
             <th style="border: 1px solid #334155; padding: 7px;">&Sigma; Agua Ent. (m³/h)</th>
             <th style="border: 1px solid #334155; padding: 7px;">&Sigma; Agua Sal. (m³/h)</th>
             <th style="border: 1px solid #334155; padding: 7px;">Error Agua (%)</th>
+            <th style="border: 1px solid #334155; padding: 7px;">Err Cu (%)</th>
+            <th style="border: 1px solid #334155; padding: 7px;">Err Au (%)</th>
+            <th style="border: 1px solid #334155; padding: 7px;">Err Li (%)</th>
+            <th style="border: 1px solid #334155; padding: 7px;">Err Fe (%)</th>
+            <th style="border: 1px solid #334155; padding: 7px;">Err Mo (%)</th>
+            <th style="border: 1px solid #334155; padding: 7px;">Error Máx (%)</th>
             <th style="border: 1px solid #334155; padding: 7px;" colspan="2">Diagnóstico Cierre</th>
           </tr>
           ${nodeClosureHtml}
@@ -635,7 +656,7 @@ export function exportFlowsheetToPrintablePdf(
 
     doc.triangle(x2, y2, x2 - 2.2, y2 - 1.1, x2 - 2.2, y2 + 1.1, 'F');
 
-    const tagW = 20;
+    const tagW = 24;
     const tagH = 6.5;
     const midY = (y1 + y2) / 2;
     doc.setFillColor(255, 255, 255);
@@ -644,15 +665,15 @@ export function exportFlowsheetToPrintablePdf(
     doc.roundedRect(midX - tagW / 2, midY - tagH / 2, tagW, tagH, 0.8, 0.8, 'FD');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(5.2);
+    doc.setFontSize(5.0);
     doc.setTextColor(3, 105, 161);
     doc.text(edge.id, midX, midY - 0.6, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(4.6);
+    doc.setFontSize(4.4);
     doc.setTextColor(51, 65, 85);
     doc.text(
-      `${edge.flow_data.solids_tph.toFixed(0)}t/h | ${edge.flow_data.percent_solids.toFixed(0)}%`,
+      `${edge.flow_data.solids_tph.toFixed(2)}t/h | ${edge.flow_data.percent_solids.toFixed(2)}%`,
       midX,
       midY + 2.1,
       { align: 'center' }
@@ -865,9 +886,9 @@ export function exportFlowsheetToSvg(project: Project, flowsheet: Flowsheet): vo
       return `
         <g>
           <path d="${pathData}" fill="none" stroke="${strokeColor}" stroke-width="2.5" />
-          <rect x="${midX - 46}" y="${(y1 + y2) / 2 - 18}" width="92" height="34" rx="4" fill="#0f172a" stroke="${strokeColor}" stroke-width="1" />
+          <rect x="${midX - 54}" y="${(y1 + y2) / 2 - 18}" width="108" height="34" rx="4" fill="#0f172a" stroke="${strokeColor}" stroke-width="1" />
           <text x="${midX}" y="${(y1 + y2) / 2 - 4}" fill="#f8fafc" font-family="monospace" font-size="10" font-weight="bold" text-anchor="middle">${edge.id}</text>
-          <text x="${midX}" y="${(y1 + y2) / 2 + 10}" fill="#cbd5e1" font-family="monospace" font-size="9" text-anchor="middle">${edge.flow_data.solids_tph}t/h · ${edge.flow_data.percent_solids}%Cp</text>
+          <text x="${midX}" y="${(y1 + y2) / 2 + 10}" fill="#cbd5e1" font-family="monospace" font-size="9" text-anchor="middle">${edge.flow_data.solids_tph.toFixed(2)}t/h · ${edge.flow_data.percent_solids.toFixed(2)}%Cp</text>
         </g>
       `;
     })

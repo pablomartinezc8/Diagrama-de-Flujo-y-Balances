@@ -43,6 +43,7 @@ import {
   EquipmentParameters,
   EquipmentSubType,
   Flowsheet,
+  FlowsheetSolverReport,
   NodeBalanceDiagnostics,
   Project,
   StreamEdge,
@@ -54,9 +55,13 @@ import {
 } from '../utils/exportTools';
 import {
   computeDerivedSlurryProperties,
+  detectDirectedCycles,
   generateUniqueStreamId,
   getEquipmentUnitRole,
+  parseSafeEngineeringNumber,
   reconcileFlowsheetMassBalance,
+  solveFlowsheetWithReport,
+  validateFlowsheetGraph,
 } from '../utils/massBalanceMath';
 import { CustomEquipmentCadModal } from './CustomEquipmentCadModal';
 import { EquipmentSymbolSvg } from './EquipmentSymbols';
@@ -86,9 +91,13 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
   onUpdateFlowsheet,
   onAutoReconcile,
 }) => {
-  // Estado de paneles laterales desplegables/colapsables
-  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState<boolean>(true);
+  // Estado de paneles laterales desplegables/colapsables (en pantallas medianas ~1000px inicia plegado el izquierdo para priorizar lienzo + inspector)
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1180 : true
+  );
   const [isRightPanelOpen, setIsRightPanelOpen] = useState<boolean>(true);
+  const [lastSolverReport, setLastSolverReport] = useState<FlowsheetSolverReport | null>(null);
+  const [showValidationPanel, setShowValidationPanel] = useState<boolean>(false);
 
   // Catálogo combinado (Equipos estándar + Equipos creados por el usuario desde el buscador)
   const [customCatalog, setCustomCatalog] = useState<EquipmentCatalogItem[]>(() => {
@@ -411,6 +420,15 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
     setIsRightPanelOpen(true);
   };
 
+  const handleRunSolverWithReport = () => {
+    const { flowsheet: solved, report } = solveFlowsheetWithReport(flowsheet);
+    setLastSolverReport(report);
+    if (report.validationIssues.length > 0 || !report.converged) {
+      setShowValidationPanel(true);
+    }
+    onUpdateFlowsheet(solved);
+  };
+
   // Actualizar parámetros específicos del equipo seleccionado y recalcular el balance aguas abajo
   const handleNodeParameterChange = (
     paramKey: keyof EquipmentParameters,
@@ -435,40 +453,103 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
     };
 
     if (autoSolve) {
-      onUpdateFlowsheet(reconcileFlowsheetMassBalance(draftFlowsheet));
+      const { flowsheet: solved, report } = solveFlowsheetWithReport(draftFlowsheet);
+      setLastSolverReport(report);
+      onUpdateFlowsheet(solved);
     } else {
       onUpdateFlowsheet(draftFlowsheet);
     }
   };
 
+  // Actualizar la corriente de salida de un nodo Alimentador (Fuente Única de Verdad)
+  const handleFeedNodeStreamChange = (
+    field: 'solids_tph' | 'percent_solids' | 'water_m3h' | 'cu_pct' | 'au_gpt' | 'li_pct',
+    rawVal: string | number,
+    mode: 'from_solids_and_cp' | 'from_solids_and_water'
+  ) => {
+    if (!selectedNode) return;
+    const val = parseSafeEngineeringNumber(rawVal, 0, 0);
+    const outEdge = flowsheet.edges.find((e) => e.source_node_id === selectedNode.id);
+
+    if (outEdge) {
+      const cur = outEdge.flow_data;
+      const nextDraft: Partial<StreamFlowData> =
+        field === 'cu_pct' || field === 'au_gpt' || field === 'li_pct'
+          ? { ...cur, assay: { ...cur.assay, [field]: val } }
+          : { ...cur, [field]: val };
+
+      const recalculated = computeDerivedSlurryProperties(nextDraft, mode);
+      const updatedEdges = flowsheet.edges.map((e) =>
+        e.id === outEdge.id ? { ...e, flow_data: recalculated } : e
+      );
+      // Limpiamos parámetros duplicados en el nodo feed para mantener única fuente de verdad en la corriente
+      const updatedNodes = flowsheet.nodes.map((n) =>
+        n.id === selectedNode.id ? { ...n, parameters: {} } : n
+      );
+      const { flowsheet: solved, report } = solveFlowsheetWithReport({
+        ...flowsheet,
+        nodes: updatedNodes,
+        edges: updatedEdges,
+      });
+      setLastSolverReport(report);
+      onUpdateFlowsheet(solved);
+    } else {
+      // Si aún no tiene corriente conectada, guarda preliminarmente en parameters
+      const paramMap: Record<string, keyof EquipmentParameters> = {
+        solids_tph: 'feed_solids_tph',
+        percent_solids: 'feed_cp_pct',
+        water_m3h: 'feed_water_m3h',
+        cu_pct: 'feed_cu_pct',
+        au_gpt: 'feed_au_gpt',
+        li_pct: 'feed_li_pct',
+      };
+      handleNodeParameterChange(paramMap[field], val, false);
+    }
+  };
+
   // Actualizar variables metalúrgicas de una corriente seleccionada
   const handleStreamDataChange = (
-    field: keyof StreamFlowData | 'cu_pct' | 'au_gpt' | 'li_pct' | 'fe_pct',
-    rawValue: number,
+    field: keyof StreamFlowData | 'cu_pct' | 'au_gpt' | 'li_pct' | 'fe_pct' | 'mo_pct',
+    rawValue: number | string,
     explicitMode?: 'from_solids_and_cp' | 'from_solids_and_water'
   ) => {
     if (!selectedStream) return;
     const modeToUse = explicitMode ?? calcMode;
+    const sanitizedVal = parseSafeEngineeringNumber(rawValue, 0, 0);
 
     const currentData = selectedStream.flow_data;
     let nextDraft: Partial<StreamFlowData> = { ...currentData };
 
-    if (field === 'cu_pct' || field === 'au_gpt' || field === 'li_pct' || field === 'fe_pct') {
+    if (
+      field === 'cu_pct' ||
+      field === 'au_gpt' ||
+      field === 'li_pct' ||
+      field === 'fe_pct' ||
+      field === 'mo_pct'
+    ) {
       nextDraft.assay = {
         ...currentData.assay,
-        [field]: rawValue,
+        [field]: sanitizedVal,
       };
     } else {
       nextDraft = {
         ...currentData,
-        [field]: rawValue,
+        [field]: sanitizedVal,
       };
     }
 
     const recalculated = computeDerivedSlurryProperties(nextDraft, modeToUse);
 
+    // Si la corriente nace de un feed_source, limpiamos parámetros duplicados en ese feed_source
+    const srcNode = nodeMap.get(selectedStream.source_node_id);
+    const updatedNodes =
+      srcNode?.type === 'feed_source'
+        ? flowsheet.nodes.map((n) => (n.id === srcNode.id ? { ...n, parameters: {} } : n))
+        : flowsheet.nodes;
+
     onUpdateFlowsheet({
       ...flowsheet,
+      nodes: updatedNodes,
       edges: flowsheet.edges.map((edge) =>
         edge.id === selectedStream.id ? { ...edge, flow_data: recalculated } : edge
       ),
@@ -521,15 +602,21 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
 
   const internalDiagnostics = diagnostics.filter((d) => !d.isBoundary);
   const unbalancedNodesCount = internalDiagnostics.filter((d) => !d.isBalanced).length;
+  const graphIssues = validateFlowsheetGraph(flowsheet);
+  const hasRecycleLoop = detectDirectedCycles(flowsheet.nodes, flowsheet.edges);
   const selectedNodeRole = selectedNode
     ? getEquipmentUnitRole(selectedNode.type, selectedNode)
     : null;
+  const selectedFeedOutEdge =
+    selectedNode && selectedNodeRole === 'feed_generator'
+      ? flowsheet.edges.find((e) => e.source_node_id === selectedNode.id) ?? null
+      : null;
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-57px)] overflow-hidden bg-slate-950 relative">
+    <div className="flex flex-col md:flex-row min-h-[calc(100vh-57px)] md:h-[calc(100vh-57px)] overflow-y-auto md:overflow-hidden bg-slate-950 relative">
       {/* COLUMNA IZQUIERDA COLAPSABLE: Buscador + Paleta de Equipos + Dibujo Manual */}
       {isLeftPanelOpen && (
-        <aside className="w-full lg:w-[325px] shrink-0 bg-slate-900/95 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col max-h-[44vh] lg:max-h-none overflow-hidden z-20">
+        <aside className="w-full md:w-[260px] xl:w-[320px] shrink-0 bg-slate-900/95 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col max-h-[38vh] md:max-h-none overflow-hidden z-20">
           {/* Cabecera del Panel Izquierdo con botón para plegar */}
           <div className="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
             <span className="text-[11px] font-mono text-cyan-400 font-semibold tracking-wide">
@@ -750,7 +837,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
 
             <button
               type="button"
-              onClick={onAutoReconcile}
+              onClick={handleRunSolverWithReport}
               className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold text-xs transition-colors cursor-pointer"
             >
               <Calculator className="w-3.5 h-3.5" />
@@ -761,7 +848,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
       )}
 
       {/* CENTRO (Flex-1): Lienzo Interactivo PFD con Botones para Desplegar/Cerrar Paneles */}
-      <section className="flex-1 flex flex-col min-w-0 relative bg-slate-950 overflow-hidden">
+      <section className="flex-1 flex flex-col min-w-0 min-h-[480px] relative bg-slate-950 overflow-hidden">
         {/* Sub-barra de Herramientas del Lienzo PFD */}
         <div className="min-h-11 px-3 py-1.5 border-b border-slate-800 bg-slate-900/80 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2 overflow-x-auto">
@@ -814,26 +901,49 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
               |
             </span>
 
-            {/* Estado de Cierre del Flowsheet */}
+            {/* Estado de Cierre del Flowsheet (Masa, Agua y 5 Elementos) */}
             {unbalancedNodesCount === 0 ? (
               <div className="inline-flex items-center gap-1.5 text-xs font-mono text-emerald-400 whitespace-nowrap">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>CIERRE NOMINAL (ΣE = ΣS)</span>
+                <span>CIERRE NOMINAL (ΣE = ΣS · Masa, Agua y Leyes)</span>
               </div>
             ) : (
               <div className="inline-flex items-center gap-1.5 text-xs font-mono text-rose-400 whitespace-nowrap">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>
-                  {unbalancedNodesCount} EQUIPO(S) POR RECALCULAR
+                  {unbalancedNodesCount} EQUIPO(S) CON DESBALANCE
                 </span>
                 <button
                   type="button"
-                  onClick={onAutoReconcile}
+                  onClick={handleRunSolverWithReport}
                   className="ml-1 px-2 py-0.5 bg-rose-500/20 border border-rose-500/50 text-rose-200 rounded hover:bg-rose-500/30 cursor-pointer"
                 >
-                  Recalcular Ahora
+                  Calcular y Balancear Flujo (ΣE=ΣS)
                 </button>
               </div>
+            )}
+
+            {/* Indicador de Validación Topológica / Lazo de Recirculación */}
+            {(graphIssues.length > 0 || hasRecycleLoop || lastSolverReport) && (
+              <button
+                type="button"
+                onClick={() => setShowValidationPanel((v) => !v)}
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono rounded border cursor-pointer whitespace-nowrap ${
+                  graphIssues.some((i) => i.severity === 'error')
+                    ? 'bg-rose-950/80 border-rose-500/60 text-rose-200'
+                    : graphIssues.length > 0
+                    ? 'bg-amber-950/80 border-amber-500/60 text-amber-200'
+                    : 'bg-cyan-950/70 border-cyan-500/50 text-cyan-200'
+                }`}
+              >
+                <span>
+                  {graphIssues.length > 0
+                    ? `${graphIssues.length} Alerta(s) Topología`
+                    : hasRecycleLoop
+                    ? 'Lazo Recirculación Activo'
+                    : `Solver OK (${lastSolverReport?.iterations ?? 1} iter)`}
+                </span>
+              </button>
             )}
 
             {/* Instrucciones contextuales según modo */}
@@ -945,6 +1055,64 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Panel Desplegable de Validación de Grafo y Reporte de Convergencia de Recirculación */}
+        {showValidationPanel && (
+          <div className="px-4 py-2.5 bg-slate-900/95 border-b border-slate-800 text-xs space-y-2 shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center gap-3 font-mono">
+                <span className="text-cyan-400 font-semibold">
+                  DIAGNÓSTICO DE GRAFO Y CONVERGENCIA DEL MOTOR:
+                </span>
+                {lastSolverReport && (
+                  <span
+                    className={
+                      lastSolverReport.converged ? 'text-emerald-400' : 'text-rose-400 font-bold'
+                    }
+                  >
+                    {lastSolverReport.message}
+                  </span>
+                )}
+                {lastSolverReport?.circulatingLoadRatio_pct !== undefined && (
+                  <span className="px-2 py-0.5 rounded bg-slate-800 text-amber-300">
+                    Razón Carga Circulante (UF/OF): {lastSolverReport.circulatingLoadRatio_pct.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowValidationPanel(false)}
+                className="text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {graphIssues.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-36 overflow-y-auto pt-1">
+                {graphIssues.map((iss) => (
+                  <div
+                    key={iss.id}
+                    className={`p-2 rounded border text-[11px] ${
+                      iss.severity === 'error'
+                        ? 'bg-rose-950/40 border-rose-500/50 text-rose-200'
+                        : 'bg-amber-950/40 border-amber-500/50 text-amber-200'
+                    }`}
+                  >
+                    <div className="font-mono font-bold">
+                      [{iss.severity.toUpperCase()}] {iss.targetLabel}: {iss.message}
+                    </div>
+                    <div className="text-slate-300 mt-0.5">Solución: {iss.remediation}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[11px] font-mono text-emerald-400">
+                ✓ Topología PFD verificada: sin corrientes huérfanas, sin equipos desconectados y grados de libertad consistentes.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Superficie del Lienzo con Grilla Técnica PFD */}
         <div
@@ -1209,12 +1377,12 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     </span>
                     <span className="text-slate-200 font-semibold tabular-nums">
                       {edge.flow_data.solids_tph > 0
-                        ? `${edge.flow_data.solids_tph.toFixed(0)}t/h`
-                        : `${edge.flow_data.water_m3h.toFixed(0)}m³/h`}
+                        ? `${edge.flow_data.solids_tph.toFixed(2)} t/h`
+                        : `${edge.flow_data.water_m3h.toFixed(2)} m³/h`}
                     </span>
                   </div>
                   <div className="text-[9px] font-mono text-slate-400 tabular-nums">
-                    {edge.id} · {edge.flow_data.percent_solids.toFixed(0)}%Cp
+                    {edge.id} · {edge.flow_data.percent_solids.toFixed(2)}%Cp
                   </div>
                 </button>
               );
@@ -1234,9 +1402,17 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                   : 'border-slate-600 bg-slate-900/95 text-slate-100';
 
               // Dato resumido clave que va dentro/sobre el cuerpo del equipo o en su placa
+              const outFeed =
+                node.type === 'feed_source'
+                  ? flowsheet.edges.find((e) => e.source_node_id === node.id)
+                  : undefined;
               const quickMetric =
                 node.parameters.dim_width_m && node.parameters.dim_height_m
                   ? `${node.parameters.dim_width_m}×${node.parameters.dim_height_m}m`
+                  : outFeed
+                  ? outFeed.flow_data.solids_tph > 0
+                    ? `${outFeed.flow_data.solids_tph.toFixed(2)} t/h`
+                    : `${outFeed.flow_data.water_m3h.toFixed(2)} m³/h`
                   : node.parameters.feed_solids_tph !== undefined
                   ? `${node.parameters.feed_solids_tph} t/h`
                   : node.parameters.split_ratio_primary !== undefined
@@ -1263,6 +1439,11 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                 >
                   {/* CUADRITO SUPERIOR DEL EQUIPO (Tag + Estado Cierre + Botones Configurar/Conectar) */}
                   <div
+                    title={
+                      diag && !diag.isBoundary && diag.failingVariables.length > 0
+                        ? `Desbalance en: ${diag.failingVariables.join(', ')}`
+                        : `${node.tag} — ${node.name}`
+                    }
                     className={`px-2 py-0.5 rounded border flex items-center justify-between gap-2 text-[10px] font-mono shadow-md ${badgeBorder} ${
                       isSelected ? 'ring-2 ring-cyan-400 border-cyan-400' : ''
                     } ${isConnectingSource ? 'ring-2 ring-amber-400 border-amber-400' : ''}`}
@@ -1279,7 +1460,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                         >
                           {diag.isBalanced
                             ? 'OK'
-                            : `Δ${Math.max(diag.solidsError_pct, diag.waterError_pct).toFixed(0)}%`}
+                            : `Δ${diag.maxError_pct.toFixed(2)}%`}
                         </span>
                       )}
                     </div>
@@ -1360,9 +1541,9 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
         </div>
       </section>
 
-      {/* COLUMNA DERECHA COLAPSABLE (395px): Configuración de Cálculo por Equipo, Corriente o Zona */}
+      {/* COLUMNA DERECHA COLAPSABLE (330-395px): Configuración de Cálculo por Equipo, Corriente o Zona */}
       {isRightPanelOpen && (
-        <aside className="w-full lg:w-[395px] shrink-0 bg-slate-900/95 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col overflow-y-auto z-20">
+        <aside className="w-full md:w-[330px] xl:w-[395px] shrink-0 bg-slate-900/95 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col overflow-y-auto z-20">
           {/* Barra superior del Inspector Derecho con botón para cerrar */}
           <div className="px-4 py-2.5 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
             <span className="text-[11px] font-mono text-cyan-400 font-semibold tracking-wide">
@@ -1451,12 +1632,13 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                   </span>
                 </div>
 
-                {/* ROL A: ALIMENTACIÓN INICIAL (Feed Source) */}
+                {/* ROL A: ALIMENTACIÓN INICIAL (Feed Source - Fuente Única de Verdad en su Corriente de Salida) */}
                 {selectedNodeRole === 'feed_generator' && (
                   <div className="space-y-3">
                     <p className="text-[11px] text-slate-400">
-                      Define la corriente inicial de alimentación o caudal de agua/solución que
-                      ingresa a la planta desde este punto:
+                      {selectedFeedOutEdge
+                        ? `Fuente única de verdad sincronizada con la corriente ${selectedFeedOutEdge.id}:`
+                        : 'Define la corriente inicial de alimentación o caudal de agua/solución:'}
                     </p>
                     <div className="grid grid-cols-2 gap-2.5">
                       <div>
@@ -1467,11 +1649,16 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                           type="number"
                           step="25"
                           min="0"
-                          value={selectedNode.parameters.feed_solids_tph ?? 1800}
+                          value={
+                            selectedFeedOutEdge
+                              ? selectedFeedOutEdge.flow_data.solids_tph
+                              : selectedNode.parameters.feed_solids_tph ?? 1800
+                          }
                           onChange={(e) =>
-                            handleNodeParameterChange(
-                              'feed_solids_tph',
-                              parseFloat(e.target.value) || 0
+                            handleFeedNodeStreamChange(
+                              'solids_tph',
+                              e.target.value,
+                              'from_solids_and_cp'
                             )
                           }
                           className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs font-mono text-slate-100 tabular-nums"
@@ -1483,14 +1670,19 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                         </label>
                         <input
                           type="number"
-                          step="1"
+                          step="0.5"
                           min="0"
                           max="100"
-                          value={selectedNode.parameters.feed_cp_pct ?? 97}
+                          value={
+                            selectedFeedOutEdge
+                              ? selectedFeedOutEdge.flow_data.percent_solids
+                              : selectedNode.parameters.feed_cp_pct ?? 97
+                          }
                           onChange={(e) =>
-                            handleNodeParameterChange(
-                              'feed_cp_pct',
-                              parseFloat(e.target.value) || 0
+                            handleFeedNodeStreamChange(
+                              'percent_solids',
+                              e.target.value,
+                              'from_solids_and_cp'
                             )
                           }
                           className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs font-mono text-cyan-300 tabular-nums"
@@ -1504,11 +1696,16 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                           type="number"
                           step="10"
                           min="0"
-                          value={selectedNode.parameters.feed_water_m3h ?? 55}
+                          value={
+                            selectedFeedOutEdge
+                              ? selectedFeedOutEdge.flow_data.water_m3h
+                              : selectedNode.parameters.feed_water_m3h ?? 55.67
+                          }
                           onChange={(e) =>
-                            handleNodeParameterChange(
-                              'feed_water_m3h',
-                              parseFloat(e.target.value) || 0
+                            handleFeedNodeStreamChange(
+                              'water_m3h',
+                              e.target.value,
+                              'from_solids_and_water'
                             )
                           }
                           className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs font-mono text-sky-300 tabular-nums"
@@ -1522,11 +1719,16 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                           type="number"
                           step="0.05"
                           min="0"
-                          value={selectedNode.parameters.feed_cu_pct ?? 0.85}
+                          value={
+                            selectedFeedOutEdge
+                              ? selectedFeedOutEdge.flow_data.assay.cu_pct
+                              : selectedNode.parameters.feed_cu_pct ?? 0.85
+                          }
                           onChange={(e) =>
-                            handleNodeParameterChange(
-                              'feed_cu_pct',
-                              parseFloat(e.target.value) || 0
+                            handleFeedNodeStreamChange(
+                              'cu_pct',
+                              e.target.value,
+                              'from_solids_and_water'
                             )
                           }
                           className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs font-mono text-amber-300 tabular-nums"
@@ -2043,16 +2245,16 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
 
                 <button
                   type="button"
-                  onClick={onAutoReconcile}
+                  onClick={handleRunSolverWithReport}
                   className="w-full py-2 px-3 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold text-xs rounded transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Calculator className="w-3.5 h-3.5" />
-                  Aplicar Parámetros y Recalcular Balance
+                  Calcular y Balancear Flujo (ΣE=ΣS)
                 </button>
               </div>
 
-              {/* 3. Diagnóstico de Conservación de Masa en el Equipo */}
-              <div className="p-3.5 rounded bg-slate-950 border border-slate-800 space-y-2.5">
+              {/* 3. Diagnóstico Completo de Conservación de Masa, Agua y 5 Elementos en el Equipo */}
+              <div className="p-3.5 rounded bg-slate-950 border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-mono text-slate-300">
                     AUDITORÍA DEL NODO (ΣE = ΣS)
@@ -2065,37 +2267,84 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     {selectedNodeDiag.isBoundary
                       ? 'FRONTERA SISTEMA'
                       : selectedNodeDiag.isBalanced
-                      ? 'CERRADO OK'
-                      : 'DESBALANCEADO'}
+                      ? `CERRADO OK (Máx ${selectedNodeDiag.maxError_pct.toFixed(2)}%)`
+                      : `DESBALANCE (${selectedNodeDiag.maxError_pct.toFixed(2)}%)`}
                   </span>
                 </div>
 
+                {!selectedNodeDiag.isBoundary && selectedNodeDiag.failingVariables.length > 0 && (
+                  <div className="p-2 rounded bg-rose-950/50 border border-rose-500/60 text-[11px] font-mono text-rose-200">
+                    Variables fuera de tolerancia (±{flowsheet.tolerance_pct}%):{' '}
+                    <strong>{selectedNodeDiag.failingVariables.join(', ')}</strong>
+                  </div>
+                )}
+
                 <div className="space-y-1.5 text-xs font-mono">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Σ Sólidos Entrada:</span>
+                    <span className="text-slate-400">Σ Sólidos Ent / Sal:</span>
                     <span className="text-slate-100 tabular-nums">
-                      {selectedNodeDiag.solidsIn_tph.toFixed(2)} t/h
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Σ Sólidos Salida:</span>
-                    <span className="text-slate-100 tabular-nums">
-                      {selectedNodeDiag.solidsOut_tph.toFixed(2)} t/h
+                      {selectedNodeDiag.solidsIn_tph.toFixed(2)} /{' '}
+                      {selectedNodeDiag.solidsOut_tph.toFixed(2)} t/h (
+                      {selectedNodeDiag.solidsError_pct.toFixed(2)}%)
                     </span>
                   </div>
                   <div className="flex justify-between pt-1 border-t border-slate-800/80">
-                    <span className="text-slate-400">Σ Agua Entrada (+Adición):</span>
+                    <span className="text-slate-400">Σ Agua Ent (+Adic.) / Sal:</span>
                     <span className="text-sky-300 tabular-nums">
-                      {selectedNodeDiag.waterIn_m3h.toFixed(2)} m³/h
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Σ Agua Salida:</span>
-                    <span className="text-sky-300 tabular-nums">
-                      {selectedNodeDiag.waterOut_m3h.toFixed(2)} m³/h
+                      {selectedNodeDiag.waterIn_m3h.toFixed(2)} /{' '}
+                      {selectedNodeDiag.waterOut_m3h.toFixed(2)} m³/h (
+                      {selectedNodeDiag.waterError_pct.toFixed(2)}%)
                     </span>
                   </div>
                 </div>
+
+                {/* Tabla de cierre por elemento de ley (Cu, Au, Li, Fe, Mo) */}
+                {!selectedNodeDiag.isBoundary && (
+                  <div className="pt-2 border-t border-slate-800">
+                    <div className="text-[10px] font-mono text-cyan-400 mb-1.5">
+                      CIERRE DE FINOS METÁLICOS POR ELEMENTO
+                    </div>
+                    <table className="w-full text-[10px] font-mono tabular-nums border-collapse">
+                      <thead>
+                        <tr className="text-slate-400 border-b border-slate-800">
+                          <th className="py-1 text-left">Elem.</th>
+                          <th className="py-1 text-right">Σ Ent.</th>
+                          <th className="py-1 text-right">Σ Sal.</th>
+                          <th className="py-1 text-right">Δ Abs</th>
+                          <th className="py-1 text-right">Error %</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-900">
+                        {(['Cu', 'Au', 'Li', 'Fe', 'Mo'] as const).map((sym) => {
+                          const ed = selectedNodeDiag.elementDiagnostics[sym];
+                          return (
+                            <tr key={sym}>
+                              <td className="py-1 font-bold text-slate-200">
+                                {sym} ({ed.unit})
+                              </td>
+                              <td className="py-1 text-right text-slate-300">
+                                {ed.fineIn.toFixed(3)}
+                              </td>
+                              <td className="py-1 text-right text-slate-300">
+                                {ed.fineOut.toFixed(3)}
+                              </td>
+                              <td className="py-1 text-right text-slate-400">
+                                {ed.delta >= 0 ? `+${ed.delta.toFixed(3)}` : ed.delta.toFixed(3)}
+                              </td>
+                              <td
+                                className={`py-1 text-right font-semibold ${
+                                  ed.isBalanced ? 'text-emerald-400' : 'text-rose-400'
+                                }`}
+                              >
+                                {ed.error_pct.toFixed(2)}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {/* 4. Conectar Nueva Corriente de Salida desde este Equipo */}
@@ -2438,14 +2687,14 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     <div>
                       <div className="text-[10px] text-slate-400">Flujo Pulpa</div>
                       <div className="text-sm font-mono font-semibold text-slate-100 tabular-nums">
-                        {selectedStream.flow_data.pulp_mass_tph.toFixed(1)}
+                        {selectedStream.flow_data.pulp_mass_tph.toFixed(2)}
                         <span className="text-[10px] text-slate-400 ml-1">t/h</span>
                       </div>
                     </div>
                     <div>
                       <div className="text-[10px] text-slate-400">Caudal Pulpa</div>
                       <div className="text-sm font-mono font-semibold text-slate-100 tabular-nums">
-                        {selectedStream.flow_data.pulp_vol_m3h.toFixed(1)}
+                        {selectedStream.flow_data.pulp_vol_m3h.toFixed(2)}
                         <span className="text-[10px] text-slate-400 ml-1">m³/h</span>
                       </div>
                     </div>
@@ -2453,10 +2702,10 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                 </div>
               </div>
 
-              {/* Leyes de Mineral y Dosificación de Reactivos */}
+              {/* Leyes de Mineral (5 Elementos) y Dosificación de Reactivos */}
               <div className="space-y-3 pt-2 border-t border-slate-800">
                 <div className="text-xs font-semibold text-slate-200">
-                  Leyes Químicas y Reactivos
+                  Leyes Químicas (Cu, Au, Li, Fe, Mo) y Reactivos
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -2466,13 +2715,12 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     <input
                       id="assay-cu"
                       type="number"
-                      step="0.05"
+                      step="0.01"
                       min="0"
+                      max="100"
                       value={selectedStream.flow_data.assay.cu_pct}
-                      onChange={(e) =>
-                        handleStreamDataChange('cu_pct', parseFloat(e.target.value) || 0)
-                      }
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-slate-100 tabular-nums"
+                      onChange={(e) => handleStreamDataChange('cu_pct', e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-amber-300 tabular-nums"
                     />
                   </div>
                   <div>
@@ -2482,12 +2730,10 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     <input
                       id="assay-au"
                       type="number"
-                      step="0.05"
+                      step="0.01"
                       min="0"
                       value={selectedStream.flow_data.assay.au_gpt}
-                      onChange={(e) =>
-                        handleStreamDataChange('au_gpt', parseFloat(e.target.value) || 0)
-                      }
+                      onChange={(e) => handleStreamDataChange('au_gpt', e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-slate-100 tabular-nums"
                     />
                   </div>
@@ -2498,13 +2744,42 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                     <input
                       id="assay-li"
                       type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={selectedStream.flow_data.assay.li_pct}
+                      onChange={(e) => handleStreamDataChange('li_pct', e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-emerald-300 tabular-nums"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="assay-fe" className="block text-[11px] text-slate-400 mb-1">
+                      Ley Hierro (% Fe)
+                    </label>
+                    <input
+                      id="assay-fe"
+                      type="number"
                       step="0.05"
                       min="0"
-                      value={selectedStream.flow_data.assay.li_pct}
-                      onChange={(e) =>
-                        handleStreamDataChange('li_pct', parseFloat(e.target.value) || 0)
-                      }
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-slate-100 tabular-nums"
+                      max="100"
+                      value={selectedStream.flow_data.assay.fe_pct}
+                      onChange={(e) => handleStreamDataChange('fe_pct', e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-slate-200 tabular-nums"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="assay-mo" className="block text-[11px] text-slate-400 mb-1">
+                      Ley Molibdeno (% Mo)
+                    </label>
+                    <input
+                      id="assay-mo"
+                      type="number"
+                      step="0.005"
+                      min="0"
+                      max="100"
+                      value={selectedStream.flow_data.assay.mo_pct ?? 0}
+                      onChange={(e) => handleStreamDataChange('mo_pct', e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-cyan-300 tabular-nums"
                     />
                   </div>
                   <div>
@@ -2518,10 +2793,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                       min="0"
                       value={selectedStream.flow_data.reagent_dosage_gpt}
                       onChange={(e) =>
-                        handleStreamDataChange(
-                          'reagent_dosage_gpt',
-                          parseFloat(e.target.value) || 0
-                        )
+                        handleStreamDataChange('reagent_dosage_gpt', e.target.value)
                       }
                       className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs font-mono text-slate-100 tabular-nums"
                     />
@@ -2576,7 +2848,7 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
                       ? 'FRONTERA'
                       : d.isBalanced
                       ? '● OK'
-                      : `▲ ${Math.max(d.solidsError_pct, d.waterError_pct).toFixed(1)}%`}
+                      : `▲ ${d.maxError_pct.toFixed(2)}%`}
                   </span>
                 </button>
               ))}

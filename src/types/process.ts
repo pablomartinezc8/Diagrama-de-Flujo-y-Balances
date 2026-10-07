@@ -229,6 +229,18 @@ export interface Project {
   primary_commodity: 'Cu-Au' | 'Li-Brine' | 'Polimetálico Fe-Cu';
 }
 
+export type ElementSymbol = 'Cu' | 'Au' | 'Li' | 'Fe' | 'Mo';
+
+export interface ElementClosureDiagnostic {
+  element: ElementSymbol;
+  unit: 't/h' | 'g/h';
+  fineIn: number;
+  fineOut: number;
+  delta: number;         // fineIn - fineOut
+  error_pct: number;     // Error relativo (%)
+  isBalanced: boolean;
+}
+
 export interface NodeBalanceDiagnostics {
   nodeId: string;
   nodeTag: string;
@@ -247,10 +259,62 @@ export interface NodeBalanceDiagnostics {
   waterOut_m3h: number;
   waterDelta_m3h: number;
   waterError_pct: number;
+  pulpIn_tph: number;
+  pulpOut_tph: number;
+  pulpDelta_tph: number;
+  pulpError_pct: number;
   cuFineIn_tph: number;
   cuFineOut_tph: number;
   cuError_pct: number;
+  auFineIn_gh: number;
+  auFineOut_gh: number;
+  auError_pct: number;
+  liFineIn_tph: number;
+  liFineOut_tph: number;
+  liError_pct: number;
+  feFineIn_tph: number;
+  feFineOut_tph: number;
+  feError_pct: number;
+  moFineIn_tph: number;
+  moFineOut_tph: number;
+  moError_pct: number;
+  elementDiagnostics: Record<ElementSymbol, ElementClosureDiagnostic>;
+  failingVariables: string[];  // Ej: ['Au (-0.36%)', 'Mo (-0.71%)']
+  maxError_pct: number;        // Mayor error entre Sólidos, Agua y los 5 Elementos
   calculatedBondPower_kw?: number;
   isBalanced: boolean;
   status: 'balanced' | 'warning' | 'unbalanced' | 'boundary' | 'disconnected';
+}
+
+export interface GraphValidationIssue {
+  id: string;
+  severity: 'error' | 'warning';
+  code:
+    | 'DISCONNECTED_NODE'
+    | 'ORPHAN_STREAM'
+    | 'FEED_HAS_INLETS'
+    | 'SINK_HAS_OUTLETS'
+    | 'MISSING_OUTLET_FOR_INTERNAL'
+    | 'MISSING_INLET_FOR_INTERNAL'
+    | 'INSUFFICIENT_OUTLETS_FOR_SEPARATOR'
+    | 'MISSING_PARAMETER'
+    | 'DUPLICATE_WATER_SOURCE'
+    | 'NON_CONVERGENT_CYCLE'
+    | 'INVALID_PHYSICAL_VALUE';
+  targetId: string;            // ID de nodo o corriente afectada
+  targetLabel: string;         // Tag del equipo o ID de corriente (ej. "CY-202" o "STR-004")
+  message: string;             // Explicación clara en español
+  remediation: string;         // Cómo solucionarlo
+}
+
+export interface FlowsheetSolverReport {
+  converged: boolean;
+  iterations: number;
+  maxIterations: number;
+  maxResidual_tph: number;
+  convergenceTolerance_tph: number;
+  hasRecycleLoops: boolean;
+  circulatingLoadRatio_pct?: number; // % Carga circulante si hay ciclo molino-ciclón
+  validationIssues: GraphValidationIssue[];
+  message: string;
 }

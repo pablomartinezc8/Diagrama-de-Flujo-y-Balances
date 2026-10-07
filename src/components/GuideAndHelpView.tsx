@@ -180,8 +180,8 @@ export const GuideAndHelpView: React.FC<GuideAndHelpViewProps> = ({
               </p>
               <ul className="text-xs text-slate-300 space-y-1 pt-1 font-mono">
                 <li>· Edición rápida en tabla matricial</li>
-                <li>· Exportación a Excel (.CSV UTF-8)</li>
-                <li>· Descarga de plano vectorial (.SVG)</li>
+                <li>· Exportar Planilla Excel (.XLS)</li>
+                <li>· Descargar Plano PDF y PFD Vectorial (.SVG)</li>
               </ul>
             </div>
             <button
@@ -291,8 +291,8 @@ export const GuideAndHelpView: React.FC<GuideAndHelpViewProps> = ({
                 </ul>
               </li>
               <li>
-                Ajusta la Gravedad Específica del mineral seco (ej. $2.75\ t/m^3$) y las leyes
-                químicas ($\%Cu$, $g/t\ Au$, $\%Li$).
+                Ajusta la Gravedad Específica del mineral seco (ej. $2.75\ t/m^3$) y las 5 leyes
+                químicas ($\%Cu$, $g/t\ Au$, $\%Li$, $\%Fe$, $\%Mo$).
               </li>
             </ol>
           </div>
@@ -303,27 +303,28 @@ export const GuideAndHelpView: React.FC<GuideAndHelpViewProps> = ({
               <span>PASO 3 · VALIDAR Y EXPORTAR ENTREGABLES</span>
             </div>
             <h3 className="text-sm font-semibold text-slate-100">
-              Diagnóstico de Cierre (ΣE = ΣS) y Reporte Excel
+              Diagnóstico de Cierre (ΣE = ΣS) y Planilla Excel (.XLS)
             </h3>
             <ol className="text-xs text-slate-300 space-y-2 leading-relaxed list-decimal list-inside">
               <li>
-                Cada equipo interno suma todas sus corrientes de entrada y las compara con sus
-                corrientes de salida.
+                Cada equipo interno suma sus corrientes de entrada y las compara con sus salidas en
+                masa de sólidos, agua y los 5 elementos químicos (Cu, Au, Li, Fe, Mo).
               </li>
               <li>
-                Si la diferencia supera la tolerancia (ej. $\pm 0.1\%$), el borde del equipo se
-                marca en <strong className="text-rose-400">Rojo (Desbalanceado)</strong> indicando
-                el porcentaje de error.
+                Si alguna variable supera la tolerancia ($\pm 0.1\%$), el equipo se marca en{' '}
+                <strong className="text-rose-400">Rojo (Desbalanceado)</strong> indicando qué
+                variable falla.
               </li>
               <li>
                 Presiona el botón{' '}
-                <strong className="text-cyan-300">Balancear Nodos Automáticamente</strong> para
-                que el motor propague los flujos aguas abajo y cierre todos los equipos al $0.00\%$
-                de error.
+                <strong className="text-cyan-300">Calcular y Balancear Flujo</strong> para resolver
+                el circuito (incluyendo lazos cerrados por iteración de punto fijo/Wegstein) al
+                $0.00\%$ de error.
               </li>
               <li>
-                Finalmente, haz clic en <strong>Exportar Balance CSV</strong> para abrir la matriz
-                en Microsoft Excel.
+                Finalmente, usa <strong>Descargar Plano PDF</strong>,{' '}
+                <strong>Exportar Planilla Excel (.XLS)</strong>, <strong>PFD Vectorial (.SVG)</strong>{' '}
+                o <strong>Modelo (.JSON)</strong>.
               </li>
             </ol>
           </div>
@@ -530,20 +531,16 @@ export const GuideAndHelpView: React.FC<GuideAndHelpViewProps> = ({
               <p className="text-slate-400 mt-0.5 leading-relaxed">
                 Todos los proyectos, posiciones de equipos y balances de masa se guardan
                 automáticamente en el almacenamiento local de tu navegador (<code className="text-cyan-300">localStorage</code>) y también puedes respaldarlos en archivo físico usando el botón{' '}
-                <strong>Exportar Modelo (.JSON)</strong>.
+                <strong>Modelo (.JSON)</strong>.
               </p>
             </div>
 
             <div>
               <h3 className="font-semibold text-slate-200">
-                ¿Qué hace exactamente el botón "Balancear Nodos Automáticamente"?
+                ¿Qué hace exactamente el botón "Calcular y Balancear Flujo"?
               </h3>
               <p className="text-slate-400 mt-0.5 leading-relaxed">
-                Recorre el diagrama desde las entradas de alimentación (<em>Feeds</em>) hacia las
-                salidas, sumando los flujos en mezcladores y aplicando relaciones de partición en
-                hidrociclones, celdas de flotación y espesadores para que todas las corrientes
-                cumplan <span className="font-mono text-cyan-300">Σ Entradas = Σ Salidas</span> sin
-                errores de cierre.
+                Valida primero la topología del grafo (nodos aislados, corrientes huérfanas y grados de libertad) y luego resuelve el circuito desde las entradas de alimentación (<em>Feeds</em>) hacia las salidas, incluyendo lazos de recirculación mediante iteración de punto fijo/Wegstein, garantizando que masa, agua y los 5 elementos químicos (Cu, Au, Li, Fe, Mo) cumplan <span className="font-mono text-cyan-300">Σ Entradas = Σ Salidas</span> dentro de la tolerancia ($\pm 0.1\%$).
               </p>
             </div>
           </div>

@@ -282,12 +282,7 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
         name: 'Alimentación Mineral ROM',
         position_x: 60,
         position_y: 110,
-        parameters: {
-          feed_solids_tph: 1800,
-          feed_cp_pct: 97.0,
-          feed_cu_pct: 0.85,
-          feed_au_gpt: 0.42,
-        },
+        parameters: {},
       },
       {
         id: 'node-feed-water',
@@ -297,11 +292,7 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
         name: 'Agua de Proceso Molienda',
         position_x: 60,
         position_y: 280,
-        parameters: {
-          feed_solids_tph: 0,
-          feed_water_m3h: 944.33,
-          feed_cp_pct: 0,
-        },
+        parameters: {},
       },
       {
         id: 'node-sag-mill',
@@ -451,7 +442,6 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
           {
             solids_tph: 1170,
             water_m3h: 790.0,
-            percent_solids: 59.69,
             solid_sg: 2.75,
             liquid_sg: 1.0,
             reagent_dosage_gpt: 38,
@@ -470,11 +460,13 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
           {
             solids_tph: 630,
             water_m3h: 210.0,
-            percent_solids: 75.0,
             solid_sg: 2.75,
             liquid_sg: 1.0,
             reagent_dosage_gpt: 12,
-            assay: { cu_pct: 0.72, au_gpt: 0.36, li_pct: 0.0, fe_pct: 4.47, mo_pct: 0.016 },
+            // Leyes exactas de complemento para cierre 100.00% en CY-202 (630 t/h):
+            // Cu: (15.3 - 10.764)/630 = 0.7200% | Au: (756 - 526.5)/630 = 0.3643 g/t
+            // Fe: (73.8 - 45.63)/630 = 4.4714% | Mo: (0.396 - 0.2925)/630 = 0.0164%
+            assay: { cu_pct: 0.72, au_gpt: 0.3643, li_pct: 0.0, fe_pct: 4.4714, mo_pct: 0.0164 },
           },
           'from_solids_and_water'
         ),
@@ -489,10 +481,10 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
           {
             solids_tph: 117,
             water_m3h: 175.5,
-            percent_solids: 40.0,
             solid_sg: 4.1,
             liquid_sg: 1.0,
             reagent_dosage_gpt: 65,
+            // Recuperación Cu 90% -> Fino Conc = 9.6876 t/h -> Ley Cu = 8.2800%
             assay: { cu_pct: 8.28, au_gpt: 3.65, li_pct: 0.0, fe_pct: 24.5, mo_pct: 0.19 },
           },
           'from_solids_and_water'
@@ -508,11 +500,13 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
           {
             solids_tph: 1053,
             water_m3h: 614.5,
-            percent_solids: 63.15,
             solid_sg: 2.68,
             liquid_sg: 1.0,
             reagent_dosage_gpt: 10,
-            assay: { cu_pct: 0.102, au_gpt: 0.09, li_pct: 0.0, fe_pct: 1.61, mo_pct: 0.007 },
+            // Leyes exactas de complemento para cierre 100.00% en FT-301 (1053 t/h):
+            // Cu: (10.764 - 9.6876)/1053 = 0.1022% | Au: (526.5 - 427.05)/1053 = 0.0944 g/t
+            // Fe: (45.63 - 28.665)/1053 = 1.6111% | Mo: (0.2925 - 0.2223)/1053 = 0.0067%
+            assay: { cu_pct: 0.1022, au_gpt: 0.0944, li_pct: 0.0, fe_pct: 1.6111, mo_pct: 0.0067 },
           },
           'from_solids_and_water'
         ),
@@ -640,7 +634,7 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
             solid_sg: 2.15,
             liquid_sg: 1.16,
             reagent_dosage_gpt: 60,
-            assay: { cu_pct: 0, au_gpt: 0, li_pct: 1.715, fe_pct: 0.018 },
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 1.715, fe_pct: 0.0185, mo_pct: 0 },
           },
           'from_solids_and_water'
         ),
@@ -659,7 +653,7 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
             solid_sg: 2.15,
             liquid_sg: 1.16,
             reagent_dosage_gpt: 25,
-            assay: { cu_pct: 0, au_gpt: 0, li_pct: 5.65, fe_pct: 0.002 },
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 5.65, fe_pct: 0.002, mo_pct: 0 },
           },
           'from_solids_and_water'
         ),
@@ -678,7 +672,7 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
             solid_sg: 2.15,
             liquid_sg: 1.16,
             reagent_dosage_gpt: 10,
-            assay: { cu_pct: 0, au_gpt: 0, li_pct: 0.185, fe_pct: 0.024 },
+            assay: { cu_pct: 0, au_gpt: 0, li_pct: 0.1847, fe_pct: 0.0249, mo_pct: 0 },
           },
           'from_solids_and_water'
         ),

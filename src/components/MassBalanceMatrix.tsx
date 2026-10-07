@@ -25,7 +25,10 @@ import {
   exportProfessionalExcelSheet,
   exportProjectModelToJson,
 } from '../utils/exportTools';
-import { computeDerivedSlurryProperties } from '../utils/massBalanceMath';
+import {
+  computeDerivedSlurryProperties,
+  parseSafeEngineeringNumber,
+} from '../utils/massBalanceMath';
 
 interface MassBalanceMatrixProps {
   project: Project;
@@ -57,19 +60,26 @@ export const MassBalanceMatrix: React.FC<MassBalanceMatrixProps> = ({
 
   const handleInlineCellEdit = (
     edgeId: string,
-    field: 'solids_tph' | 'percent_solids' | 'water_m3h' | 'cu_pct',
-    val: number
+    field: 'solids_tph' | 'percent_solids' | 'water_m3h' | 'cu_pct' | 'au_gpt' | 'li_pct' | 'fe_pct' | 'mo_pct',
+    rawVal: string
   ) => {
+    const val = parseSafeEngineeringNumber(rawVal, 0);
     const updatedEdges = flowsheet.edges.map((edge) => {
       if (edge.id !== edgeId) return edge;
       const d = edge.flow_data;
-      if (field === 'cu_pct') {
+      if (
+        field === 'cu_pct' ||
+        field === 'au_gpt' ||
+        field === 'li_pct' ||
+        field === 'fe_pct' ||
+        field === 'mo_pct'
+      ) {
         return {
           ...edge,
           flow_data: computeDerivedSlurryProperties(
             {
               ...d,
-              assay: { ...d.assay, cu_pct: val },
+              assay: { ...d.assay, [field]: val },
             },
             'from_solids_and_water'
           ),
@@ -127,7 +137,7 @@ export const MassBalanceMatrix: React.FC<MassBalanceMatrixProps> = ({
             className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded transition-colors cursor-pointer whitespace-nowrap"
           >
             <Calculator className="w-3.5 h-3.5 text-cyan-400" />
-            Reconciliar Balance (ΣE=ΣS)
+            Calcular y Balancear Flujo (ΣE=ΣS)
           </button>
 
           <button
@@ -217,19 +227,21 @@ export const MassBalanceMatrix: React.FC<MassBalanceMatrixProps> = ({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-950/90 text-[11px] font-mono text-slate-400">
-                <th className="py-3 px-3">ID</th>
-                <th className="py-3 px-3">Descripción de Corriente</th>
-                <th className="py-3 px-3">Origen → Destino</th>
-                <th className="py-3 px-3 text-right">Sólidos (t/h)</th>
-                <th className="py-3 px-3 text-right">Agua (m³/h)</th>
-                <th className="py-3 px-3 text-right">Pulpa (t/h)</th>
-                <th className="py-3 px-3 text-right">Caudal (m³/h)</th>
-                <th className="py-3 px-3 text-right">% Sólidos (%Cp)</th>
-                <th className="py-3 px-3 text-right">Dens. Pulpa (t/m³)</th>
-                <th className="py-3 px-3 text-right">Ley Cu (%)</th>
-                <th className="py-3 px-3 text-right">Ley Au (g/t)</th>
-                <th className="py-3 px-3 text-right">Ley Li (%)</th>
-                <th className="py-3 px-3 text-right">Cu Fino (t/h)</th>
+                <th className="py-3 px-2.5">ID</th>
+                <th className="py-3 px-2.5">Descripción de Corriente</th>
+                <th className="py-3 px-2.5">Origen → Destino</th>
+                <th className="py-3 px-2 text-right">Sólidos (t/h)</th>
+                <th className="py-3 px-2 text-right">Agua (m³/h)</th>
+                <th className="py-3 px-2 text-right">Pulpa (t/h)</th>
+                <th className="py-3 px-2 text-right">Caudal (m³/h)</th>
+                <th className="py-3 px-2 text-right">% Sólidos (%Cp)</th>
+                <th className="py-3 px-2 text-right">Dens. Pulpa (t/m³)</th>
+                <th className="py-3 px-2 text-right text-amber-300">Ley Cu (%)</th>
+                <th className="py-3 px-2 text-right text-emerald-300">Cu Fino (t/h)</th>
+                <th className="py-3 px-2 text-right text-yellow-300">Au (g/t)</th>
+                <th className="py-3 px-2 text-right text-purple-300">Li (%)</th>
+                <th className="py-3 px-2 text-right text-orange-300">Fe (%)</th>
+                <th className="py-3 px-2 text-right text-cyan-300">Mo (%)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/70 text-xs font-mono tabular-nums">
@@ -244,87 +256,130 @@ export const MassBalanceMatrix: React.FC<MassBalanceMatrixProps> = ({
                     key={edge.id}
                     className="hover:bg-slate-800/40 transition-colors"
                   >
-                    <td className="py-2.5 px-3 font-semibold text-cyan-400 whitespace-nowrap">
+                    <td className="py-2.5 px-2.5 font-semibold text-cyan-400 whitespace-nowrap">
                       {edge.id}
                     </td>
-                    <td className="py-2.5 px-3 font-sans text-slate-200 min-w-[200px]">
+                    <td className="py-2.5 px-2.5 font-sans text-slate-200 min-w-[180px]">
                       {edge.name}
                     </td>
-                    <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">
+                    <td className="py-2.5 px-2.5 text-slate-400 whitespace-nowrap">
                       {src?.tag ?? '?'} → {tgt?.tag ?? '?'}
                     </td>
-                    <td className="py-2 px-3 text-right">
+                    <td className="py-2 px-2 text-right">
                       <input
                         type="number"
-                        step="10"
+                        step="0.01"
                         min="0"
                         aria-label={`Sólidos t/h para ${edge.id}`}
-                        value={d.solids_tph}
+                        value={Number(d.solids_tph.toFixed(2))}
                         onChange={(e) =>
-                          handleInlineCellEdit(
-                            edge.id,
-                            'solids_tph',
-                            parseFloat(e.target.value) || 0
-                          )
+                          handleInlineCellEdit(edge.id, 'solids_tph', e.target.value)
                         }
                         className="w-20 px-1.5 py-1 bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded text-right text-slate-100"
                       />
                     </td>
-                    <td className="py-2 px-3 text-right">
+                    <td className="py-2 px-2 text-right">
                       <input
                         type="number"
-                        step="5"
+                        step="0.01"
                         min="0"
                         aria-label={`Agua m3/h para ${edge.id}`}
-                        value={d.water_m3h}
+                        value={Number(d.water_m3h.toFixed(2))}
                         onChange={(e) =>
-                          handleInlineCellEdit(
-                            edge.id,
-                            'water_m3h',
-                            parseFloat(e.target.value) || 0
-                          )
+                          handleInlineCellEdit(edge.id, 'water_m3h', e.target.value)
                         }
                         className="w-20 px-1.5 py-1 bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded text-right text-sky-300"
                       />
                     </td>
-                    <td className="py-2.5 px-3 text-right text-slate-200">
+                    <td className="py-2.5 px-2 text-right text-slate-200">
                       {d.pulp_mass_tph.toFixed(2)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-slate-300">
+                    <td className="py-2.5 px-2 text-right text-slate-300">
                       {d.pulp_vol_m3h.toFixed(2)}
                     </td>
-                    <td className="py-2 px-3 text-right">
+                    <td className="py-2 px-2 text-right">
                       <input
                         type="number"
-                        step="0.5"
+                        step="0.01"
                         min="0"
                         max="100"
                         aria-label={`Porcentaje sólidos para ${edge.id}`}
-                        value={d.percent_solids}
+                        value={Number(d.percent_solids.toFixed(2))}
                         onChange={(e) =>
-                          handleInlineCellEdit(
-                            edge.id,
-                            'percent_solids',
-                            parseFloat(e.target.value) || 0
-                          )
+                          handleInlineCellEdit(edge.id, 'percent_solids', e.target.value)
                         }
                         className="w-16 px-1.5 py-1 bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded text-right text-cyan-300"
                       />
                     </td>
-                    <td className="py-2.5 px-3 text-right font-semibold text-slate-100">
+                    <td className="py-2.5 px-2 text-right font-semibold text-slate-100">
                       {d.pulp_density.toFixed(3)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-amber-300">
-                      {d.assay.cu_pct.toFixed(3)}
+                    <td className="py-2 px-2 text-right">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={Number(d.assay.cu_pct.toFixed(3))}
+                        onChange={(e) =>
+                          handleInlineCellEdit(edge.id, 'cu_pct', e.target.value)
+                        }
+                        className="w-16 px-1 py-1 bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded text-right text-amber-300"
+                      />
                     </td>
-                    <td className="py-2.5 px-3 text-right text-slate-300">
-                      {d.assay.au_gpt.toFixed(2)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-emerald-300">
-                      {d.assay.li_pct.toFixed(3)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-semibold text-slate-200">
+                    <td className="py-2.5 px-2 text-right font-semibold text-emerald-300">
                       {cuFine.toFixed(3)}
+                    </td>
+                    <td className="py-2 px-2 text-right">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={Number(d.assay.au_gpt.toFixed(3))}
+                        onChange={(e) =>
+                          handleInlineCellEdit(edge.id, 'au_gpt', e.target.value)
+                        }
+                        className="w-16 px-1 py-1 bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded text-right text-yellow-300"
+                      />
+                    </td>
+                    <td className="py-2 px-2 text-right">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={Number(d.assay.li_pct.toFixed(3))}
+                        onChange={(e) =>
+                          handleInlineCellEdit(edge.id, 'li_pct', e.target.value)
+                        }
+                        className="w-14 px-1 py-1 bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded text-right text-purple-300"
+                      />
+                    </td>
+                    <td className="py-2 px-2 text-right">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={Number(d.assay.fe_pct.toFixed(3))}
+                        onChange={(e) =>
+                          handleInlineCellEdit(edge.id, 'fe_pct', e.target.value)
+                        }
+                        className="w-14 px-1 py-1 bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded text-right text-orange-300"
+                      />
+                    </td>
+                    <td className="py-2 px-2 text-right">
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        max="100"
+                        value={Number(d.assay.mo_pct.toFixed(4))}
+                        onChange={(e) =>
+                          handleInlineCellEdit(edge.id, 'mo_pct', e.target.value)
+                        }
+                        className="w-16 px-1 py-1 bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded text-right text-cyan-300"
+                      />
                     </td>
                   </tr>
                 );
@@ -334,7 +389,7 @@ export const MassBalanceMatrix: React.FC<MassBalanceMatrixProps> = ({
         </div>
       </div>
 
-      {/* TABLA DE AUDITORÍA DE CONSERVACIÓN DE MATERIA POR NODO (Σ Entradas = Σ Salidas) */}
+      {/* TABLA DE AUDITORÍA DE CONSERVACIÓN DE MATERIA POR NODO (Σ Entradas = Σ Salidas en Masa, Agua y 5 Elementos) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
@@ -342,20 +397,19 @@ export const MassBalanceMatrix: React.FC<MassBalanceMatrixProps> = ({
               Verificación de Cierre de Balance en Nodos y Equipos (Σ Entradas = Σ Salidas)
             </h2>
             <p className="text-xs text-slate-400">
-              Tolerancia configurada para el proyecto: ±{flowsheet.tolerance_pct}% sobre flujos de
-              sólidos y agua.
+              Tolerancia configurada para el proyecto: ±{flowsheet.tolerance_pct}% sobre sólidos, agua y cada uno de los 5 elementos químicos (Cu, Au, Li, Fe, Mo).
             </p>
           </div>
           <div className="text-xs font-mono">
             {allBalanced ? (
               <span className="inline-flex items-center gap-1.5 text-emerald-400">
                 <CheckCircle2 className="w-4 h-4" />
-                TODOS LOS NODOS CERRADOS (ERROR &le; {flowsheet.tolerance_pct}%)
+                TODOS LOS NODOS Y ELEMENTOS CERRADOS (ERROR &le; {flowsheet.tolerance_pct}%)
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 text-rose-400">
                 <AlertTriangle className="w-4 h-4" />
-                EXISTEN DESBALANCES EN EQUIPOS
+                EXISTEN DESBALANCES EN MASA O ELEMENTOS QUÍMICOS
               </span>
             )}
           </div>
@@ -366,51 +420,86 @@ export const MassBalanceMatrix: React.FC<MassBalanceMatrixProps> = ({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 bg-slate-950/90 text-[11px] font-mono text-slate-400">
-                  <th className="py-2.5 px-3">Tag Equipo</th>
-                  <th className="py-2.5 px-3">Nombre de Equipo / Nodo</th>
-                  <th className="py-2.5 px-3 text-right">Σ Sólidos Ent. (t/h)</th>
-                  <th className="py-2.5 px-3 text-right">Σ Sólidos Sal. (t/h)</th>
-                  <th className="py-2.5 px-3 text-right">Δ Sólidos (t/h)</th>
-                  <th className="py-2.5 px-3 text-right">Σ Agua Ent. (m³/h)</th>
-                  <th className="py-2.5 px-3 text-right">Σ Agua Sal. (m³/h)</th>
-                  <th className="py-2.5 px-3 text-right">Error Máx. (%)</th>
-                  <th className="py-2.5 px-3 text-right">Estado Cierre</th>
+                  <th className="py-2.5 px-2.5">Tag Equipo</th>
+                  <th className="py-2.5 px-2.5">Nombre de Equipo / Nodo</th>
+                  <th className="py-2.5 px-2 text-right">Σ Sólidos E/S (t/h)</th>
+                  <th className="py-2.5 px-2 text-right">Σ Agua E/S (m³/h)</th>
+                  <th className="py-2.5 px-2 text-right text-amber-300">Err Cu (%)</th>
+                  <th className="py-2.5 px-2 text-right text-yellow-300">Err Au (%)</th>
+                  <th className="py-2.5 px-2 text-right text-purple-300">Err Li (%)</th>
+                  <th className="py-2.5 px-2 text-right text-orange-300">Err Fe (%)</th>
+                  <th className="py-2.5 px-2 text-right text-cyan-300">Err Mo (%)</th>
+                  <th className="py-2.5 px-2.5 text-right">Error Máx. (%)</th>
+                  <th className="py-2.5 px-2.5 text-right">Estado / Variables con Falla</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/70 text-xs font-mono tabular-nums">
                 {internalNodes.map((n) => {
-                  const maxErr = Math.max(n.solidsError_pct, n.waterError_pct);
+                  const cuCheck = n.elementChecks.find((c) => c.key === 'cu_pct');
+                  const auCheck = n.elementChecks.find((c) => c.key === 'au_gpt');
+                  const liCheck = n.elementChecks.find((c) => c.key === 'li_pct');
+                  const feCheck = n.elementChecks.find((c) => c.key === 'fe_pct');
+                  const moCheck = n.elementChecks.find((c) => c.key === 'mo_pct');
+
+                  const renderErrCell = (errPct: number | undefined, isOk: boolean | undefined) => {
+                    const val = errPct ?? 0;
+                    return (
+                      <span className={isOk !== false ? 'text-emerald-400' : 'text-rose-400 font-semibold'}>
+                        {val >= 0 ? `+${val.toFixed(2)}%` : `${val.toFixed(2)}%`}
+                      </span>
+                    );
+                  };
+
                   return (
                     <tr key={n.nodeId} className="hover:bg-slate-800/30">
-                      <td className="py-2.5 px-3 font-semibold text-cyan-400">{n.nodeTag}</td>
-                      <td className="py-2.5 px-3 font-sans text-slate-200">{n.nodeName}</td>
-                      <td className="py-2.5 px-3 text-right text-slate-200">
-                        {n.solidsIn_tph.toFixed(2)}
+                      <td className="py-2.5 px-2.5 font-semibold text-cyan-400">{n.nodeTag}</td>
+                      <td className="py-2.5 px-2.5 font-sans text-slate-200">{n.nodeName}</td>
+                      <td className="py-2.5 px-2 text-right text-slate-200">
+                        {n.solidsIn_tph.toFixed(2)} / {n.solidsOut_tph.toFixed(2)}
+                        <span className="block text-[10px] text-slate-400">
+                          Δ: {n.solidsDelta_tph >= 0 ? `+${n.solidsDelta_tph.toFixed(2)}` : n.solidsDelta_tph.toFixed(2)} ({n.solidsError_pct.toFixed(2)}%)
+                        </span>
                       </td>
-                      <td className="py-2.5 px-3 text-right text-slate-200">
-                        {n.solidsOut_tph.toFixed(2)}
+                      <td className="py-2.5 px-2 text-right text-sky-300">
+                        {n.waterIn_m3h.toFixed(2)} / {n.waterOut_m3h.toFixed(2)}
+                        <span className="block text-[10px] text-slate-400">
+                          Δ: {n.waterDelta_m3h >= 0 ? `+${n.waterDelta_m3h.toFixed(2)}` : n.waterDelta_m3h.toFixed(2)} ({n.waterError_pct.toFixed(2)}%)
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-2 text-right">
+                        {renderErrCell(cuCheck?.relativeError_pct, cuCheck?.isBalanced)}
+                      </td>
+                      <td className="py-2.5 px-2 text-right">
+                        {renderErrCell(auCheck?.relativeError_pct, auCheck?.isBalanced)}
+                      </td>
+                      <td className="py-2.5 px-2 text-right">
+                        {renderErrCell(liCheck?.relativeError_pct, liCheck?.isBalanced)}
+                      </td>
+                      <td className="py-2.5 px-2 text-right">
+                        {renderErrCell(feCheck?.relativeError_pct, feCheck?.isBalanced)}
+                      </td>
+                      <td className="py-2.5 px-2 text-right">
+                        {renderErrCell(moCheck?.relativeError_pct, moCheck?.isBalanced)}
                       </td>
                       <td
-                        className={`py-2.5 px-3 text-right ${
-                          Math.abs(n.solidsDelta_tph) <= 0.1 ? 'text-slate-400' : 'text-rose-400'
+                        className={`py-2.5 px-2.5 text-right font-semibold ${
+                          n.maxError_pct > flowsheet.tolerance_pct ? 'text-rose-400' : 'text-emerald-400'
                         }`}
                       >
-                        {n.solidsDelta_tph > 0 ? `+${n.solidsDelta_tph.toFixed(2)}` : n.solidsDelta_tph.toFixed(2)}
+                        {n.maxError_pct.toFixed(2)}%
                       </td>
-                      <td className="py-2.5 px-3 text-right text-sky-300">
-                        {n.waterIn_m3h.toFixed(2)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right text-sky-300">
-                        {n.waterOut_m3h.toFixed(2)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-semibold">
-                        {maxErr.toFixed(2)}%
-                      </td>
-                      <td className="py-2.5 px-3 text-right">
+                      <td className="py-2.5 px-2.5 text-right">
                         {n.isBalanced ? (
                           <span className="text-emerald-400">● NOMINAL</span>
                         ) : (
-                          <span className="text-rose-400 font-semibold">▲ DESBALANCE</span>
+                          <div className="flex flex-col items-end">
+                            <span className="text-rose-400 font-semibold">▲ DESBALANCE</span>
+                            {n.failingVariables.length > 0 && (
+                              <span className="text-[10px] text-rose-300 font-sans">
+                                Falla: {n.failingVariables.join(', ')}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
