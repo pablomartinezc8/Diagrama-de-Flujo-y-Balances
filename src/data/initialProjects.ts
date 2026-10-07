@@ -279,7 +279,12 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
         name: 'Alimentación Mineral ROM',
         position_x: 60,
         position_y: 110,
-        parameters: {},
+        parameters: {
+          feed_solids_tph: 1800,
+          feed_cp_pct: 97.0,
+          feed_cu_pct: 0.85,
+          feed_au_gpt: 0.42,
+        },
       },
       {
         id: 'node-feed-water',
@@ -289,7 +294,11 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
         name: 'Agua de Proceso Molienda',
         position_x: 60,
         position_y: 280,
-        parameters: {},
+        parameters: {
+          feed_solids_tph: 0,
+          feed_water_m3h: 944.33,
+          feed_cp_pct: 0,
+        },
       },
       {
         id: 'node-sag-mill',
@@ -299,7 +308,14 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
         name: 'Molino SAG 40x26 ft',
         position_x: 340,
         position_y: 190,
-        parameters: { capacity_max_tph: 2200, power_kw: 22000 },
+        parameters: {
+          capacity_max_tph: 2200,
+          power_kw: 22000,
+          f80_mm: 125,
+          p80_um: 1800,
+          bond_wi_kwht: 15.8,
+          added_water_m3h: 0,
+        },
       },
       {
         id: 'node-cyclone-pack',
@@ -309,7 +325,12 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
         name: 'Batería Hidrociclones 33"',
         position_x: 640,
         position_y: 190,
-        parameters: { capacity_max_tph: 3500, split_ratio_primary: 0.35 },
+        parameters: {
+          capacity_max_tph: 3500,
+          split_ratio_primary: 0.65,
+          target_underflow_cp: 75.0,
+          cut_size_d50_um: 150,
+        },
       },
       {
         id: 'node-flotation-rougher',
@@ -319,7 +340,14 @@ export const INITIAL_FLOWSHEETS: Record<string, Flowsheet> = {
         name: 'Banco Flotación Rougher (6x300m³)',
         position_x: 940,
         position_y: 100,
-        parameters: { capacity_max_tph: 1500, split_ratio_primary: 0.10 },
+        parameters: {
+          capacity_max_tph: 1500,
+          split_ratio_primary: 0.10,
+          mass_pull_pct: 10.0,
+          metal_recovery_pct: 90.0,
+          concentrate_cp_pct: 40.0,
+          residence_time_min: 24,
+        },
       },
       {
         id: 'node-prod-conc',

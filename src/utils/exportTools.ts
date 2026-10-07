@@ -4,15 +4,177 @@
  */
 
 import { jsPDF } from 'jspdf';
-import { Flowsheet, NodeBalanceDiagnostics, Project } from '../types/process';
+import {
+  EquipmentSubType,
+  Flowsheet,
+  NodeBalanceDiagnostics,
+  Project,
+} from '../types/process';
+
+/**
+ * Normaliza cadenas para jsPDF (fuente estándar Helvetica WinAnsi) evitando que guiones largos
+ * o caracteres fuera de Latin-1 rompan el renderizado o corten palabras.
+ */
+function sanitizePdfText(str: string): string {
+  return (str || '')
+    .replace(/—|–/g, '-')
+    .replace(/·/g, '|')
+    .replace(/µ/g, 'u')
+    .replace(/³/g, '3')
+    .replace(/±/g, '+/-')
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, '');
+}
+
+/**
+ * Dibuja la silueta técnica PFD/CAD de cada equipo dentro del plano PDF usando primitivas vectoriales
+ */
+function drawPdfEquipmentSymbol(
+  doc: jsPDF,
+  type: EquipmentSubType,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number
+): void {
+  const rx = w / 2;
+  const ry = h / 2;
+
+  switch (type) {
+    case 'mill_sag':
+    case 'mill_ball': {
+      // Chute de alimentación inclinado (izquierda)
+      doc.setFillColor(234, 179, 8);
+      doc.setDrawColor(113, 63, 18);
+      doc.setLineWidth(0.3);
+      doc.triangle(cx - rx * 0.9, cy - ry * 0.6, cx - rx * 0.5, cy - ry * 0.6, cx - rx * 0.45, cy + ry * 0.1, 'FD');
+      // Tambor cilíndrico rotatorio principal (Amarillo ocre grande)
+      doc.setFillColor(234, 179, 8);
+      doc.rect(cx - rx * 0.45, cy - ry * 0.55, rx * 1.15, ry * 1.1, 'FD');
+      // Pernos / Liners del molino
+      doc.setDrawColor(133, 77, 14);
+      doc.line(cx - rx * 0.1, cy - ry * 0.55, cx - rx * 0.1, cy + ry * 0.55);
+      doc.line(cx + rx * 0.3, cy - ry * 0.55, cx + rx * 0.3, cy + ry * 0.55);
+      // Trommel de descarga derecha
+      doc.rect(cx + rx * 0.7, cy - ry * 0.25, rx * 0.22, ry * 0.5, 'FD');
+      // Motor azul inferior izquierdo
+      doc.setFillColor(29, 78, 216);
+      doc.rect(cx - rx * 0.6, cy + ry * 0.3, rx * 0.45, ry * 0.35, 'FD');
+      // Base / Skid amarillo inferior
+      doc.setFillColor(202, 138, 4);
+      doc.rect(cx - rx * 0.65, cy + ry * 0.65, rx * 1.45, ry * 0.18, 'FD');
+      break;
+    }
+    case 'crusher_jaw':
+    case 'crusher_cone': {
+      // Tolva superior amarilla + cuerpo cónico/mandíbula + motor azul
+      doc.setFillColor(234, 179, 8);
+      doc.setDrawColor(113, 63, 18);
+      doc.setLineWidth(0.3);
+      doc.rect(cx - rx * 0.55, cy - ry * 0.7, rx * 1.1, ry * 0.28, 'FD');
+      doc.setFillColor(202, 138, 4);
+      doc.rect(cx - rx * 0.5, cy - ry * 0.42, rx * 1.0, ry * 0.95, 'FD');
+      doc.setFillColor(51, 65, 85);
+      doc.triangle(cx, cy - ry * 0.35, cx - rx * 0.32, cy + ry * 0.4, cx + rx * 0.32, cy + ry * 0.4, 'FD');
+      doc.setFillColor(29, 78, 216);
+      doc.rect(cx + rx * 0.52, cy + ry * 0.1, rx * 0.35, ry * 0.38, 'FD');
+      break;
+    }
+    case 'mill_hpgr': {
+      doc.setFillColor(202, 138, 4);
+      doc.setDrawColor(113, 63, 18);
+      doc.setLineWidth(0.3);
+      doc.rect(cx - rx * 0.65, cy - ry * 0.5, rx * 1.3, ry * 1.05, 'FD');
+      doc.setFillColor(51, 65, 85);
+      doc.circle(cx - rx * 0.25, cy, ry * 0.38, 'FD');
+      doc.circle(cx + rx * 0.25, cy, ry * 0.38, 'FD');
+      break;
+    }
+    case 'hydrocyclone': {
+      // Cabezal amarillo + cono clasificador + tubería overflow azul
+      doc.setDrawColor(2, 132, 199);
+      doc.setLineWidth(0.5);
+      doc.line(cx, cy - ry * 0.55, cx, cy - ry * 0.82);
+      doc.line(cx, cy - ry * 0.82, cx + rx * 0.65, cy - ry * 0.82);
+      doc.setFillColor(234, 179, 8);
+      doc.setDrawColor(113, 63, 18);
+      doc.setLineWidth(0.3);
+      doc.rect(cx - rx * 0.32, cy - ry * 0.55, rx * 0.64, ry * 0.42, 'FD');
+      doc.setFillColor(202, 138, 4);
+      doc.triangle(cx - rx * 0.32, cy - ry * 0.13, cx + rx * 0.32, cy - ry * 0.13, cx, cy + ry * 0.78, 'FD');
+      break;
+    }
+    case 'flotation_rougher':
+    case 'flotation_scavenger':
+    case 'flotation_cleaner':
+    case 'leach_tank': {
+      // Puente amarillo + motores azules + celdas con espuma verde
+      doc.setFillColor(234, 179, 8);
+      doc.setDrawColor(113, 63, 18);
+      doc.setLineWidth(0.25);
+      doc.rect(cx - rx * 0.75, cy - ry * 0.68, rx * 1.5, ry * 0.16, 'FD');
+      doc.setFillColor(29, 78, 216);
+      doc.rect(cx - rx * 0.55, cy - ry * 0.85, rx * 0.22, ry * 0.18, 'FD');
+      doc.rect(cx - rx * 0.11, cy - ry * 0.85, rx * 0.22, ry * 0.18, 'FD');
+      doc.rect(cx + rx * 0.33, cy - ry * 0.85, rx * 0.22, ry * 0.18, 'FD');
+      doc.setFillColor(30, 41, 59);
+      doc.setDrawColor(71, 85, 105);
+      doc.rect(cx - rx * 0.7, cy - ry * 0.42, rx * 1.4, ry * 1.05, 'FD');
+      doc.setFillColor(16, 185, 129);
+      doc.rect(cx - rx * 0.68, cy - ry * 0.32, rx * 1.36, ry * 0.18, 'F');
+      break;
+    }
+    case 'thickener': {
+      doc.setFillColor(234, 179, 8);
+      doc.setDrawColor(113, 63, 18);
+      doc.setLineWidth(0.25);
+      doc.rect(cx - rx * 0.85, cy - ry * 0.65, rx * 1.7, ry * 0.16, 'FD');
+      doc.setFillColor(30, 41, 59);
+      doc.setDrawColor(2, 132, 199);
+      doc.rect(cx - rx * 0.8, cy - ry * 0.45, rx * 1.6, ry * 0.5, 'FD');
+      doc.triangle(cx - rx * 0.8, cy + ry * 0.05, cx + rx * 0.8, cy + ry * 0.05, cx, cy + ry * 0.72, 'FD');
+      break;
+    }
+    case 'slurry_pump': {
+      doc.setFillColor(29, 78, 216);
+      doc.setDrawColor(15, 23, 42);
+      doc.setLineWidth(0.25);
+      doc.rect(cx - rx * 0.7, cy - ry * 0.1, rx * 0.55, ry * 0.65, 'FD');
+      doc.setFillColor(234, 179, 8);
+      doc.setDrawColor(113, 63, 18);
+      doc.circle(cx + rx * 0.25, cy + ry * 0.15, ry * 0.48, 'FD');
+      doc.rect(cx + rx * 0.15, cy - ry * 0.65, rx * 0.22, ry * 0.55, 'FD');
+      break;
+    }
+    case 'feed_source': {
+      doc.setFillColor(234, 179, 8);
+      doc.setDrawColor(113, 63, 18);
+      doc.setLineWidth(0.3);
+      doc.triangle(cx - rx * 0.7, cy - ry * 0.55, cx + rx * 0.7, cy - ry * 0.55, cx, cy + ry * 0.45, 'FD');
+      doc.setFillColor(29, 78, 216);
+      doc.rect(cx - rx * 0.5, cy + ry * 0.4, rx * 1.0, ry * 0.25, 'FD');
+      break;
+    }
+    case 'product_sink': {
+      doc.setFillColor(16, 185, 129);
+      doc.setDrawColor(5, 150, 105);
+      doc.setLineWidth(0.3);
+      doc.triangle(cx - rx * 0.75, cy + ry * 0.65, cx + rx * 0.75, cy + ry * 0.65, cx, cy - ry * 0.55, 'FD');
+      break;
+    }
+    default: {
+      doc.setFillColor(234, 179, 8);
+      doc.setDrawColor(113, 63, 18);
+      doc.setLineWidth(0.3);
+      doc.rect(cx - rx * 0.65, cy - ry * 0.48, rx * 1.3, ry * 0.96, 'FD');
+      doc.setFillColor(29, 78, 216);
+      doc.rect(cx - rx * 0.82, cy - ry * 0.18, rx * 0.2, ry * 0.36, 'FD');
+      break;
+    }
+  }
+}
 
 /**
  * 1. EXPORTACIÓN DE PLANILLA PROFESIONAL PARA EXCEL (.XLS con formato corporativo TAGING)
- * Genera un libro compatible con Microsoft Excel con:
- * - Membrete corporativo azul marino de TAGING — INGENIERÍA INTELIGENTE y su logo triangular
- * - Cuadro de metadatos del proyecto (Código, Cliente, Unidad Minera, Fase, Ingeniero, Fecha)
- * - Tabla Maestra de Corrientes con bordes, encabezados coloreados, unidades claras y celdas numéricas alineadas
- * - Tabla de Auditoría de Cierre de Balance por Equipo (Σ Entradas = Σ Salidas) con semáforo visual
  */
 export function exportProfessionalExcelSheet(
   project: Project,
@@ -124,7 +286,6 @@ export function exportProfessionalExcelSheet(
       </head>
       <body>
         <table>
-          <!-- MEMBRETE CORPORATIVO TAGING -->
           <tr>
             <td colspan="4" style="background-color: #06152D; color: #FFFFFF; padding: 14px 16px; font-size: 20px; font-weight: 800; letter-spacing: 2px; border: 1px solid #06152D;">
               &#9698; TAGING — INGENIERÍA INTELIGENTE
@@ -137,7 +298,6 @@ export function exportProfessionalExcelSheet(
             </td>
           </tr>
 
-          <!-- CUADRO TÉCNICO DE METADATOS DEL PROYECTO -->
           <tr>
             <td colspan="2" style="background-color: #E2E8F0; font-weight: bold; padding: 6px 10px; border: 1px solid #CBD5E1;">CÓDIGO PROYECTO:</td>
             <td colspan="4" style="background-color: #F8FAFC; font-weight: bold; color: #0369A1; padding: 6px 10px; border: 1px solid #CBD5E1;">${escapeHtml(project.code)}</td>
@@ -165,7 +325,6 @@ export function exportProfessionalExcelSheet(
 
           <tr><td colspan="18" style="height: 14px;"></td></tr>
 
-          <!-- SECCIÓN 1: MATRIZ PRINCIPAL DE CORRIENTES -->
           <tr>
             <td colspan="18" style="background-color: #0F172A; color: #FFFFFF; font-weight: bold; font-size: 13px; padding: 8px 12px; border: 1px solid #0F172A;">
               1. TABLA RESUMEN DE BALANCE DE MASA POR CORRIENTE (STREAMS)
@@ -195,7 +354,6 @@ export function exportProfessionalExcelSheet(
 
           <tr><td colspan="18" style="height: 16px;"></td></tr>
 
-          <!-- SECCIÓN 2: VERIFICACIÓN DE CIERRE DE NODOS -->
           <tr>
             <td colspan="12" style="background-color: #0F172A; color: #FFFFFF; font-weight: bold; font-size: 13px; padding: 8px 12px; border: 1px solid #0F172A;">
               2. VERIFICACIÓN DE CIERRE DE BALANCE POR EQUIPO / NODO (&Sigma; ENTRADAS = &Sigma; SALIDAS)
@@ -246,20 +404,17 @@ export function exportProfessionalExcelSheet(
   URL.revokeObjectURL(url);
 }
 
-// Mantenemos alias para retrocompatibilidad con cualquier llamada existente
 export const exportMassBalanceToCsv = exportProfessionalExcelSheet;
 
 /**
- * 2. EXPORTACIÓN DIRECTA DE PLANO DE INGENIERÍA EN PDF IMPRIMIBLE (A3/A4 Landscape)
- * CON SELLO OFICIAL DE "TAGING — INGENIERÍA INTELIGENTE", CAJETÍN DE CLIENTE,
- * ZONAS MANUALES DIBUJADAS, DIAGRAMAS PFD Y TABLA RESUMEN DE CORRIENTES.
+ * 2. EXPORTACIÓN DIRECTA DE PLANO DE INGENIERÍA EN PDF IMPRIMIBLE (A4 Landscape)
+ * CON SILUETAS TÉCNICAS DE CADA EQUIPO, NOMBRES COMPLETOS SIN TEXTO CORTADO Y SELLO TAGING.
  */
 export function exportFlowsheetToPrintablePdf(
   project: Project,
   flowsheet: Flowsheet,
   diagnostics: NodeBalanceDiagnostics[]
 ): void {
-  // Creamos documento PDF apaisado (Landscape A4: 297mm x 210mm) listo para imprimir o presentar a cliente
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -270,7 +425,6 @@ export function exportFlowsheetToPrintablePdf(
   const pageH = 210;
   const exportDate = new Date().toISOString().slice(0, 10);
 
-  // Marco perimetral doble estilo plano de ingeniería
   doc.setDrawColor(15, 23, 42);
   doc.setLineWidth(0.6);
   doc.rect(6, 6, pageW - 12, pageH - 12);
@@ -278,11 +432,10 @@ export function exportFlowsheetToPrintablePdf(
   doc.rect(7.5, 7.5, pageW - 15, pageH - 15);
 
   // CABECERA CORPORATIVA CON EL SELLO / LOGO DE TAGING
-  doc.setFillColor(6, 21, 45); // Azul marino corporativo TAGING (#06152D)
+  doc.setFillColor(6, 21, 45);
   doc.rect(7.5, 7.5, pageW - 15, 22, 'F');
 
-  // Sello gráfico TAGING (Triángulo cian #009ADE + Texto TAGING + INGENIERÍA INTELIGENTE)
-  doc.setFillColor(0, 154, 222); // #009ADE
+  doc.setFillColor(0, 154, 222);
   doc.triangle(31, 14.5, 46, 9.2, 46, 14.5, 'F');
 
   doc.setTextColor(255, 255, 255);
@@ -294,42 +447,45 @@ export function exportFlowsheetToPrintablePdf(
   doc.setTextColor(186, 230, 253);
   doc.text('INGENIERIA INTELIGENTE', 13.2, 25.2);
 
-  // Línea separadora vertical en cabecera
   doc.setDrawColor(30, 58, 138);
   doc.setLineWidth(0.4);
   doc.line(58, 10, 58, 27);
 
-  // Datos del Proyecto en Cabecera del Plano
   doc.setTextColor(56, 189, 248);
   doc.setFontSize(8);
-  doc.text(`DIAGRAMA DE FLUJO DE PROCESOS (PFD) & BALANCE DE MASA — ${project.code}`, 63, 14);
+  doc.text(
+    sanitizePdfText(`DIAGRAMA DE FLUJO DE PROCESOS (PFD) & BALANCE DE MASA - ${project.code}`),
+    63,
+    14
+  );
 
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(11);
-  doc.text(project.name.slice(0, 75), 63, 20);
+  doc.setFontSize(10.5);
+  doc.text(sanitizePdfText(project.name).slice(0, 82), 63, 19.8);
 
   doc.setTextColor(203, 213, 225);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7.2);
   doc.text(
-    `Cliente: ${project.client}  |  Unidad: ${project.mining_unit}  |  Fase: ${project.phase}  |  Ing.: ${project.lead_engineer}`,
+    sanitizePdfText(
+      `Cliente: ${project.client}  |  Unidad: ${project.mining_unit}  |  Fase: ${project.phase}  |  Ing.: ${project.lead_engineer}`
+    ).slice(0, 118),
     63,
     25.2
   );
 
-  // Sello de Revisión y Fecha a la derecha de la cabecera
+  // Sello de Revisión y Fecha a la derecha
   doc.setFillColor(15, 23, 42);
-  doc.rect(240, 9.5, 47, 18, 'F');
+  doc.rect(236, 9.5, 51, 18, 'F');
   doc.setTextColor(56, 189, 248);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
-  doc.text('SELLO DE INGENIERIA', 243, 14);
+  doc.text('SELLO DE INGENIERIA', 239, 14);
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(7);
-  doc.text(`Rev: ${flowsheet.version.slice(0, 22)}`, 243, 19);
-  doc.text(`Fecha: ${exportDate}`, 243, 23.8);
+  doc.setFontSize(6.8);
+  doc.text(sanitizePdfText(`Rev: ${flowsheet.version}`).slice(0, 28), 239, 19);
+  doc.text(`Fecha: ${exportDate}`, 239, 23.8);
 
-  // ÁREA DEL LIENZO PFD (Escala automática para encajar nodos, conectores y zonas manuales)
   const canvasTop = 32;
   const canvasHeight = 104;
   const canvasLeft = 10;
@@ -340,12 +496,11 @@ export function exportFlowsheetToPrintablePdf(
   doc.setLineWidth(0.3);
   doc.rect(canvasLeft, canvasTop, canvasWidth, canvasHeight, 'FD');
 
-  // Calculamos bounding box del diagrama para escalarlo de forma limpia al plano PDF
-  const allX: number[] = [0, 1380];
+  const allX: number[] = [0, 1420];
   const allY: number[] = [0, 420];
   flowsheet.nodes.forEach((n) => {
-    allX.push(n.position_x, n.position_x + 210);
-    allY.push(n.position_y, n.position_y + 95);
+    allX.push(n.position_x, n.position_x + 215);
+    allY.push(n.position_y, n.position_y + 100);
   });
   (flowsheet.annotations ?? []).forEach((a) => {
     allX.push(a.position_x, a.position_x + a.width);
@@ -364,7 +519,7 @@ export function exportFlowsheetToPrintablePdf(
   const tx = (x: number) => canvasLeft + 6 + (x - minX) * scale;
   const ty = (y: number) => canvasTop + 5 + (y - minY) * scale;
 
-  // 1) Dibujar Zonas Manuales / Cuadros de Usuario (ej. Zona de Carga de Camiones)
+  // 1) Dibujar Zonas Manuales / Cuadros de Usuario
   (flowsheet.annotations ?? []).forEach((ann) => {
     const ax = tx(ann.position_x);
     const ay = ty(ann.position_y);
@@ -391,30 +546,30 @@ export function exportFlowsheetToPrintablePdf(
     doc.setLineDashPattern([], 0);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.5);
+    doc.setFontSize(6.2);
     doc.setTextColor(15, 23, 42);
-    doc.text(ann.title.slice(0, 65), ax + 2, ay + 4.2);
+    doc.text(sanitizePdfText(ann.title).slice(0, 70), ax + 2, ay + 4.2);
 
     if (ann.details) {
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(5.5);
+      doc.setFontSize(5.2);
       doc.setTextColor(51, 65, 85);
-      const splitDetails = doc.splitTextToSize(ann.details, Math.max(20, aw - 4));
-      doc.text(splitDetails.slice(0, 3), ax + 2, ay + 8);
+      const splitDetails = doc.splitTextToSize(sanitizePdfText(ann.details), Math.max(20, aw - 4));
+      doc.text(splitDetails.slice(0, 3), ax + 2, ay + 7.8);
     }
   });
 
-  // 2) Dibujar Conectores / Corrientes Ortogonales (Streams)
+  // 2) Dibujar Conectores / Corrientes Ortogonales
   const nodeMap = new Map(flowsheet.nodes.map((n) => [n.id, n]));
   flowsheet.edges.forEach((edge, idx) => {
     const src = nodeMap.get(edge.source_node_id);
     const tgt = nodeMap.get(edge.target_node_id);
     if (!src || !tgt) return;
 
-    const x1 = tx(src.position_x + 196);
-    const y1 = ty(src.position_y + 42);
+    const x1 = tx(src.position_x + 204);
+    const y1 = ty(src.position_y + 46);
     const x2 = tx(tgt.position_x);
-    const y2 = ty(tgt.position_y + 42);
+    const y2 = ty(tgt.position_y + 46);
     const midX = (x1 + x2) / 2 + ((idx % 3) - 1) * 1.5;
 
     if (edge.stream_type === 'water') {
@@ -432,11 +587,9 @@ export function exportFlowsheetToPrintablePdf(
     doc.line(midX, y1, midX, y2);
     doc.line(midX, y2, x2, y2);
 
-    // Pequeña flecha en el destino
     doc.triangle(x2, y2, x2 - 2.2, y2 - 1.1, x2 - 2.2, y2 + 1.1, 'F');
 
-    // Etiqueta de la corriente en el punto medio
-    const tagW = 19;
+    const tagW = 20;
     const tagH = 6.5;
     const midY = (y1 + y2) / 2;
     doc.setFillColor(255, 255, 255);
@@ -453,47 +606,65 @@ export function exportFlowsheetToPrintablePdf(
     doc.setFontSize(4.6);
     doc.setTextColor(51, 65, 85);
     doc.text(
-      `${edge.flow_data.solids_tph.toFixed(0)}t/h · ${edge.flow_data.percent_solids.toFixed(0)}%`,
+      `${edge.flow_data.solids_tph.toFixed(0)}t/h | ${edge.flow_data.percent_solids.toFixed(0)}%`,
       midX,
       midY + 2.1,
       { align: 'center' }
     );
   });
 
-  // 3) Dibujar Bloques de Equipos (EquipmentNode)
+  // 3) Dibujar Equipos como Gráficos de Cuerpo Completo (Sin cuadrado envolvente + Cuadrito arriba + Nombre abajo)
   const diagMap = new Map(diagnostics.map((d) => [d.nodeId, d]));
   flowsheet.nodes.forEach((node) => {
     const nx = tx(node.position_x);
     const ny = ty(node.position_y);
-    const nw = Math.max(24, 196 * scale);
-    const nh = Math.max(11, 84 * scale);
+    const nw = Math.max(28, 184 * scale);
+    const nh = Math.max(16, 108 * scale);
 
     const diag = diagMap.get(node.id);
+
+    // 3a) Cuadrito superior de información del equipo (Tag + Estado Cierre)
+    const topBoxH = 4.2;
     doc.setFillColor(15, 23, 42);
     if (diag && !diag.isBoundary && !diag.isBalanced) {
       doc.setDrawColor(225, 29, 72);
     } else {
       doc.setDrawColor(2, 132, 199);
     }
-    doc.setLineWidth(0.4);
-    doc.roundedRect(nx, ny, nw, nh, 1.2, 1.2, 'FD');
+    doc.setLineWidth(0.3);
+    doc.roundedRect(nx + nw * 0.1, ny, nw * 0.8, topBoxH, 0.8, 0.8, 'FD');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(5.8);
+    doc.setFontSize(5.2);
     doc.setTextColor(56, 189, 248);
-    doc.text(node.tag, nx + 1.8, ny + 3.6);
+    const statusBadge =
+      diag && !diag.isBoundary ? (diag.isBalanced ? ' [OK]' : ' [REV]') : '';
+    doc.text(
+      sanitizePdfText(`${node.tag}${statusBadge}`),
+      nx + nw / 2,
+      ny + 2.9,
+      { align: 'center' }
+    );
 
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(5.5);
-    doc.text(node.name.slice(0, 25), nx + 1.8, ny + 7.2);
+    // 3b) Figura principal grande del equipo (Sin caja contenedora)
+    drawPdfEquipmentSymbol(
+      doc,
+      node.type,
+      nx + nw / 2,
+      ny + topBoxH + (nh - topBoxH - 4) * 0.52,
+      nw * 0.88,
+      (nh - topBoxH - 4) * 0.92
+    );
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(4.6);
-    doc.setTextColor(148, 163, 184);
-    doc.text(node.category.slice(0, 26), nx + 1.8, ny + 10.2);
+    // 3c) Etiqueta inferior con el Nombre Completo del Equipo
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(5.4);
+    doc.setTextColor(15, 23, 42);
+    const wrappedName = doc.splitTextToSize(sanitizePdfText(node.name), nw + 6);
+    doc.text(wrappedName.slice(0, 2), nx + nw / 2, ny + nh - 1.2, { align: 'center' });
   });
 
-  // SECCIÓN INFERIOR DEL PDF: TABLA RESUMEN DE BALANCE DE MASA IMPRIMIBLE
+  // TABLA RESUMEN DE BALANCE DE MASA IMPRIMIBLE
   const tableTop = 140;
   doc.setFillColor(6, 21, 45);
   doc.rect(10, tableTop, pageW - 20, 6, 'F');
@@ -501,12 +672,11 @@ export function exportFlowsheetToPrintablePdf(
   doc.setFontSize(7.5);
   doc.setTextColor(255, 255, 255);
   doc.text(
-    'TABLA RESUMEN DE BALANCE DE MASA POR CORRIENTE (STREAMS) — DOCUMENTO PRESENTACION CLIENTE',
+    'TABLA RESUMEN DE BALANCE DE MASA POR CORRIENTE (STREAMS) - DOCUMENTO PRESENTACION CLIENTE',
     13,
     tableTop + 4.1
   );
 
-  // Encabezados de Columna
   const cols = [
     { label: 'ID', x: 11, w: 16 },
     { label: 'Nombre de Corriente', x: 27, w: 62 },
@@ -530,7 +700,6 @@ export function exportFlowsheetToPrintablePdf(
     doc.text(c.label, c.x + 1, headerY + 3.8);
   });
 
-  // Filas de Corrientes (máximo 9 filas en la hoja principal para no desbordar el cajetín)
   const maxRows = Math.min(flowsheet.edges.length, 8);
   for (let i = 0; i < maxRows; i++) {
     const edge = flowsheet.edges[i];
@@ -556,7 +725,7 @@ export function exportFlowsheetToPrintablePdf(
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(15, 23, 42);
-    doc.text(edge.name.slice(0, 36), cols[1].x + 1, rowY + 3.6);
+    doc.text(sanitizePdfText(edge.name).slice(0, 40), cols[1].x + 1, rowY + 3.6);
     doc.text(`${srcTag} -> ${tgtTag}`, cols[2].x + 1, rowY + 3.6);
     doc.text(d.solids_tph.toFixed(2), cols[3].x + 1, rowY + 3.6);
     doc.text(d.water_m3h.toFixed(2), cols[4].x + 1, rowY + 3.6);
@@ -579,7 +748,7 @@ export function exportFlowsheetToPrintablePdf(
   doc.setFontSize(6.5);
   doc.setTextColor(6, 21, 45);
   doc.text(
-    'PROPIEDAD DE TAGING — INGENIERIA INTELIGENTE  |  DOCUMENTO TECNICO DE PROCESOS MINEROS',
+    'PROPIEDAD DE TAGING - INGENIERIA INTELIGENTE  |  DOCUMENTO TECNICO DE PROCESOS MINEROS',
     11,
     pageH - 9.5
   );
@@ -630,10 +799,10 @@ export function exportFlowsheetToSvg(project: Project, flowsheet: Flowsheet): vo
       const tgt = nodeMap.get(edge.target_node_id);
       if (!src || !tgt) return '';
 
-      const x1 = src.position_x + 190;
-      const y1 = src.position_y + 42;
+      const x1 = src.position_x + 204;
+      const y1 = src.position_y + 46;
       const x2 = tgt.position_x;
-      const y2 = tgt.position_y + 42;
+      const y2 = tgt.position_y + 46;
       const midX = Math.round((x1 + x2) / 2);
       const pathData = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
 
@@ -661,10 +830,20 @@ export function exportFlowsheetToSvg(project: Project, flowsheet: Flowsheet): vo
     .map((node) => {
       return `
         <g transform="translate(${node.position_x}, ${node.position_y})">
-          <rect width="190" height="84" rx="6" fill="#0f172a" stroke="#334155" stroke-width="1.8" />
-          <text x="12" y="22" fill="#06b6d4" font-family="monospace" font-size="11" font-weight="bold">${node.tag}</text>
-          <text x="12" y="42" fill="#f8fafc" font-family="sans-serif" font-size="11" font-weight="bold">${escapeHtml(node.name.slice(0, 26))}</text>
-          <text x="12" y="62" fill="#94a3b8" font-family="sans-serif" font-size="10">${escapeHtml(node.category)}</text>
+          <!-- Cuadrito superior de Tag -->
+          <rect x="24" y="0" width="136" height="20" rx="4" fill="#0f172a" stroke="#06b6d4" stroke-width="1.2" />
+          <text x="92" y="14" fill="#22d3ee" font-family="monospace" font-size="11" font-weight="bold" text-anchor="middle">${node.tag}</text>
+
+          <!-- Cuerpo Industrial del Equipo (Sin caja envolvente) -->
+          <polygon points="18,36 44,36 52,58 34,58" fill="#eab308" stroke="#713f12" stroke-width="1.5" />
+          <rect x="52" y="30" width="84" height="54" rx="3" fill="#eab308" stroke="#713f12" stroke-width="1.6" />
+          <rect x="136" y="44" width="18" height="26" fill="#ca8a04" stroke="#713f12" stroke-width="1.4" />
+          <rect x="42" y="72" width="32" height="16" rx="2" fill="#1d4ed8" stroke="#0f172a" stroke-width="1.2" />
+          <rect x="34" y="88" width="118" height="8" fill="#a16207" stroke="#713f12" stroke-width="1.2" />
+
+          <!-- Etiqueta inferior con Nombre Completo -->
+          <rect x="10" y="100" width="164" height="20" rx="3" fill="#020617" stroke="#1e293b" stroke-width="1" />
+          <text x="92" y="114" fill="#f8fafc" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">${escapeHtml(node.name)}</text>
         </g>
       `;
     })
@@ -673,7 +852,6 @@ export function exportFlowsheetToSvg(project: Project, flowsheet: Flowsheet): vo
   const svgDoc = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
   <rect width="100%" height="100%" fill="#020617" />
-  <!-- Membrete TAGING -->
   <rect x="0" y="0" width="${width}" height="68" fill="#06152d" />
   <polygon points="88,26 142,6 142,26" fill="#009ade" />
   <text x="24" y="48" fill="#ffffff" font-family="sans-serif" font-size="28" font-weight="800" letter-spacing="2">TAGING</text>
@@ -704,7 +882,7 @@ export function exportFlowsheetToSvg(project: Project, flowsheet: Flowsheet): vo
 export function exportProjectModelToJson(project: Project, flowsheet: Flowsheet): void {
   const payload = {
     owner: 'TAGING — INGENIERÍA INTELIGENTE',
-    schema_version: '2026.2-TAGING-PFD',
+    schema_version: '2026.3-TAGING-PFD',
     exported_at: new Date().toISOString(),
     project,
     flowsheet,

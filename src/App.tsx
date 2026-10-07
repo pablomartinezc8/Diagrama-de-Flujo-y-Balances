@@ -21,6 +21,7 @@ import {
   computeDerivedSlurryProperties,
   evaluateNodeBalance,
   reconcileFlowsheetMassBalance,
+  sanitizeFlowsheetUniqueKeys,
 } from './utils/massBalanceMath';
 
 type ActiveModule = 'projects' | 'canvas' | 'matrix' | 'architecture' | 'guide';
@@ -41,7 +42,13 @@ export default function App() {
   const [flowsheets, setFlowsheets] = useState<Record<string, Flowsheet>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_FLOWSHEETS);
-      return saved ? JSON.parse(saved) : INITIAL_FLOWSHEETS;
+      if (!saved) return INITIAL_FLOWSHEETS;
+      const parsed: Record<string, Flowsheet> = JSON.parse(saved);
+      const cleaned: Record<string, Flowsheet> = {};
+      for (const [k, fs] of Object.entries(parsed)) {
+        cleaned[k] = sanitizeFlowsheetUniqueKeys(fs);
+      }
+      return cleaned;
     } catch {
       return INITIAL_FLOWSHEETS;
     }

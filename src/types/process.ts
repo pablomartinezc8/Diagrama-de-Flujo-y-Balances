@@ -44,6 +44,16 @@ export type EquipmentSubType =
   | 'mixer_node'
   | 'splitter_node';
 
+export type UnitOperationRole =
+  | 'feed_generator'      // Alimentación ROM / Agua Fresca (genera caudal inicial)
+  | 'crushing_grinding'   // Chancadores y Molinos (F80 -> P80, Work Index, adición de agua/solución)
+  | 'size_classifier'     // Zarandas e Hidrociclones (Partición a gruesos/finos, d50, %Cp descarga)
+  | 'concentration_leach' // Flotación, Lixiviación, Sep. Magnética (% Recuperación, Mass Pull, solución)
+  | 'dewatering'          // Espesadores y Filtros (%Cp Underflow/Queque, agua recuperada Overflow)
+  | 'mixer_pump'          // Bombas, Correas, Tuberías, Mezcladores (Suma de entradas + adición opcional)
+  | 'flow_splitter'       // Divisores (Split ratio primario)
+  | 'output_sink';        // Salida final del circuito
+
 export interface AssayValues {
   cu_pct: number;      // % Cu (Cobre)
   au_gpt: number;      // g/t Au (Oro)
@@ -66,11 +76,38 @@ export interface StreamFlowData {
 }
 
 export interface EquipmentParameters {
+  // Capacidad y Potencia
   capacity_max_tph?: number;
   power_kw?: number;
-  split_ratio_primary?: number; // Para divisores, hidrociclones, flotación (0.0 a 1.0)
-  target_underflow_cp?: number; // % sólidos objetivo en descarga de espesador/ciclón
-  residence_time_min?: number;
+
+  // 1. Parámetros para Alimentación Inicial (feed_generator)
+  feed_solids_tph?: number;       // Flujo inicial de sólidos (t/h)
+  feed_water_m3h?: number;        // Caudal inicial de agua/solución (m³/h)
+  feed_cp_pct?: number;           // % Sólidos inicial (%Cp)
+  feed_cu_pct?: number;           // Ley inicial %Cu
+  feed_au_gpt?: number;           // Ley inicial g/t Au
+  feed_li_pct?: number;           // Ley inicial %Li
+
+  // 2. Parámetros para Chancado y Molienda (crushing_grinding)
+  f80_mm?: number;                // Tamaño 80% pasante alimentación (mm)
+  p80_um?: number;                // Tamaño 80% pasante producto (µm)
+  bond_wi_kwht?: number;          // Work Index de Bond (kWh/t)
+  added_water_m3h?: number;       // Caudal de agua/solución agregada en el equipo (m³/h)
+  target_discharge_cp?: number;   // % Sólidos objetivo en la descarga (opcional)
+
+  // 3. Parámetros para Clasificación y Divisores (size_classifier / flow_splitter)
+  split_ratio_primary?: number;   // Fracción de sólidos a la salida 1 (0.0 a 1.0)
+  water_split_ratio?: number;     // Fracción de agua a la salida 1 (0.0 a 1.0)
+  cut_size_d50_um?: number;       // Tamaño de corte d50 (µm)
+  target_underflow_cp?: number;   // % Sólidos objetivo en Underflow / Queque
+
+  // 4. Parámetros para Flotación, Lixiviación y Concentración (concentration_leach)
+  mass_pull_pct?: number;         // % en peso de sólidos que reporta al concentrado (ej. 10%)
+  metal_recovery_pct?: number;    // % Recuperación metalúrgica del elemento principal (ej. 88%)
+  concentrate_cp_pct?: number;    // % Sólidos en el concentrado (ej. 40%)
+  residence_time_min?: number;    // Tiempo de residencia (min)
+  flocculant_gpt?: number;        // Dosis de floculante o reactivo (g/t)
+
   notes?: string;
 }
 
@@ -86,7 +123,7 @@ export interface EquipmentNode {
 }
 
 export interface StreamEdge {
-  id: string;                  // Ej: STR-001, STR-002
+  id: string;                  // Ej: STR-001, STR-002 (Siempre único)
   name: string;                // Ej: Alimentación Fresca ROM, Overflow Ciclones
   source_node_id: string;
   source_port?: 'out_primary' | 'out_secondary';
@@ -146,12 +183,14 @@ export interface NodeBalanceDiagnostics {
   solidsDelta_tph: number;
   solidsError_pct: number;
   waterIn_m3h: number;
+  addedWaterInNode_m3h: number; // Agua o solución agregada directamente en el equipo
   waterOut_m3h: number;
   waterDelta_m3h: number;
   waterError_pct: number;
   cuFineIn_tph: number;
   cuFineOut_tph: number;
   cuError_pct: number;
+  calculatedBondPower_kw?: number;
   isBalanced: boolean;
   status: 'balanced' | 'warning' | 'unbalanced' | 'boundary' | 'disconnected';
 }
