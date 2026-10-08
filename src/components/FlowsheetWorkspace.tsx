@@ -157,17 +157,22 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
   const diagMap = new Map(diagnostics.map((d) => [d.nodeId, d]));
   const nodeMap = new Map(flowsheet.nodes.map((n) => [n.id, n]));
 
-  // Filtrado de equipos en la paleta izquierda (si hay texto en el buscador, busca en todas las categorías)
+  // Filtrado de equipos en la paleta izquierda (busca por nombre, prefijo, descripción, tipo y keywords en español/inglés)
+  const [showAllCategories, setShowAllCategories] = useState<boolean>(false);
   const filteredCatalog = fullCatalog.filter((item) => {
     if (equipmentSearch.trim().length > 0) {
       const q = equipmentSearch.toLowerCase();
+      const kwMatch = (item.keywords ?? []).some((kw) => kw.toLowerCase().includes(q));
       return (
         item.name.toLowerCase().includes(q) ||
         item.prefix.toLowerCase().includes(q) ||
         item.description.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q)
+        item.category.toLowerCase().includes(q) ||
+        item.type.toLowerCase().includes(q) ||
+        kwMatch
       );
     }
+    if (showAllCategories) return true;
     return item.category === activeCategory;
   });
 
@@ -726,21 +731,39 @@ export const FlowsheetWorkspace: React.FC<FlowsheetWorkspaceProps> = ({
 
             {/* Pestañas de Categorías (visibles cuando no hay texto de búsqueda) */}
             {!equipmentSearch.trim() && (
-              <div className="grid grid-cols-2 gap-1 bg-slate-950 p-1 rounded border border-slate-800">
-                {CATEGORIES.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setActiveCategory(cat)}
-                    className={`px-2 py-1.5 text-[11px] font-medium rounded text-left truncate transition-colors cursor-pointer ${
-                      activeCategory === cat
-                        ? 'bg-slate-800 text-cyan-300'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setShowAllCategories((v) => !v)}
+                  className={`w-full px-2.5 py-1 text-[11px] font-mono font-semibold rounded border text-center transition-colors cursor-pointer ${
+                    showAllCategories
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/60'
+                      : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-cyan-500/40'
+                  }`}
+                >
+                  {showAllCategories
+                    ? `✓ Mostrando Todo el Catálogo (${fullCatalog.length} Equipos)`
+                    : `Ver Todos los Equipos del Catálogo (${fullCatalog.length})`}
+                </button>
+                <div className="grid grid-cols-2 gap-1 bg-slate-950 p-1 rounded border border-slate-800">
+                  {CATEGORIES.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        setShowAllCategories(false);
+                        setActiveCategory(cat);
+                      }}
+                      className={`px-2 py-1.5 text-[11px] font-medium rounded text-left truncate transition-colors cursor-pointer ${
+                        !showAllCategories && activeCategory === cat
+                          ? 'bg-slate-800 text-cyan-300'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>

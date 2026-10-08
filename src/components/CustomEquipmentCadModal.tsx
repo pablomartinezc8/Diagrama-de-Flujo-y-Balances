@@ -7,6 +7,8 @@ import React, { useRef, useState } from 'react';
 import {
   Circle,
   Check,
+  ImagePlus,
+  Layers,
   Minus,
   PenTool,
   Plus,
@@ -28,6 +30,7 @@ import {
   CustomInputFieldDef,
   EquipmentCategory,
   EquipmentParameters,
+  EquipmentSubType,
   UnitOperationRole,
 } from '../types/process';
 import { EquipmentSymbolSvg } from './EquipmentSymbols';
@@ -83,6 +86,94 @@ const INITIAL_PRIMITIVES: CustomCadPrimitive[] = [
     y: 84,
     w: 118,
     h: 10,
+  },
+];
+
+interface ComplexPresetTemplate {
+  id: string;
+  label: string;
+  name: string;
+  prefix: string;
+  category: EquipmentCategory;
+  baseType: EquipmentSubType;
+  unitRole: UnitOperationRole;
+  inletCount: number;
+  outletCount: number;
+  primitives: CustomCadPrimitive[];
+}
+
+const COMPLEX_CAD_PRESETS: ComplexPresetTemplate[] = [
+  {
+    id: 'preset-cyclone-cluster',
+    label: "Cluster Ciclones (Cyclone's Cluster)",
+    name: "Cluster de Hidrociclones (Cyclone's Cluster)",
+    prefix: 'CYC',
+    category: 'Comminución',
+    baseType: 'hydrocyclone_cluster',
+    unitRole: 'size_classifier',
+    inletCount: 1,
+    outletCount: 2,
+    primitives: [
+      { id: 'c-dist', kind: 'drum_rect', material: 'machinery_gold', x: 74, y: 12, w: 32, h: 12, hasBolts: false },
+      { id: 'c-p1', kind: 'pipe_line', material: 'process_cyan', x: 74, y: 18, w: 20, h: 24, x2: 56, y2: 42 },
+      { id: 'c-p2', kind: 'pipe_line', material: 'process_cyan', x: 106, y: 18, w: 20, h: 24, x2: 124, y2: 42 },
+      { id: 'c-cy1', kind: 'drum_rect', material: 'machinery_gold', x: 60, y: 34, w: 18, h: 18, hasBolts: false },
+      { id: 'c-co1', kind: 'hopper_trapezoid', material: 'machinery_gold', x: 60, y: 52, w: 18, h: 20, topRatio: 1.0 },
+      { id: 'c-cy2', kind: 'drum_rect', material: 'machinery_gold', x: 102, y: 34, w: 18, h: 18, hasBolts: false },
+      { id: 'c-co2', kind: 'hopper_trapezoid', material: 'machinery_gold', x: 102, y: 52, w: 18, h: 20, topRatio: 1.0 },
+      { id: 'c-box', kind: 'polygon_free', material: 'dark_steel', x: 32, y: 54, w: 120, h: 32, points: [{ x: 32, y: 56 }, { x: 32, y: 86 }, { x: 88, y: 86 }, { x: 152, y: 74 }, { x: 152, y: 54 }] },
+    ],
+  },
+  {
+    id: 'preset-pump-sump',
+    label: 'Cajón + Bomba Centrífuga',
+    name: 'Cajón Sumidero + Bomba de Pulpa',
+    prefix: 'PB',
+    category: 'Manejo de Sólidos/Líquidos',
+    baseType: 'pump_sump_box',
+    unitRole: 'mixer_pump',
+    inletCount: 2,
+    outletCount: 1,
+    primitives: [
+      { id: 'p-box', kind: 'hopper_trapezoid', material: 'dark_steel', x: 18, y: 22, w: 68, h: 62, topRatio: 1.0 },
+      { id: 'p-pipe', kind: 'pipe_line', material: 'machinery_gold', x: 80, y: 72, w: 32, h: 0, x2: 112, y2: 72 },
+      { id: 'p-vol', kind: 'flywheel_circle', material: 'machinery_gold', x: 102, y: 48, w: 40, h: 40 },
+      { id: 'p-mot', kind: 'motor_drive', material: 'motor_blue', x: 142, y: 56, w: 26, h: 26 },
+      { id: 'p-skid', kind: 'skid_base', material: 'machinery_gold', x: 16, y: 86, w: 152, h: 9 },
+    ],
+  },
+  {
+    id: 'preset-vertimill',
+    label: 'Molino Vertical Torre (Vertimill)',
+    name: 'Molino Vertical de Remolienda (Vertimill)',
+    prefix: 'VM',
+    category: 'Comminución',
+    baseType: 'mill_vertical_tower',
+    unitRole: 'crushing_grinding',
+    inletCount: 1,
+    outletCount: 1,
+    primitives: [
+      { id: 'v-mot', kind: 'motor_drive', material: 'motor_blue', x: 70, y: 6, w: 40, h: 16 },
+      { id: 'v-tower', kind: 'drum_rect', material: 'machinery_gold', x: 64, y: 22, w: 52, h: 64, hasBolts: true },
+      { id: 'v-skid', kind: 'skid_base', material: 'machinery_gold', x: 40, y: 88, w: 100, h: 10 },
+    ],
+  },
+  {
+    id: 'preset-sx-settler',
+    label: 'Mezclador-Decantador SX',
+    name: 'Mezclador-Decantador Extracción por Solventes (SX)',
+    prefix: 'SX',
+    category: 'Manejo de Sólidos/Líquidos',
+    baseType: 'sx_mixer_settler',
+    unitRole: 'concentration_leach',
+    inletCount: 2,
+    outletCount: 2,
+    primitives: [
+      { id: 'sx-mot', kind: 'motor_drive', material: 'motor_blue', x: 26, y: 8, w: 24, h: 14 },
+      { id: 'sx-mix', kind: 'drum_rect', material: 'machinery_gold', x: 18, y: 24, w: 40, h: 60, hasBolts: false },
+      { id: 'sx-set', kind: 'drum_rect', material: 'process_cyan', x: 58, y: 36, w: 104, h: 48, hasBolts: false },
+      { id: 'sx-skid', kind: 'skid_base', material: 'dark_steel', x: 14, y: 86, w: 152, h: 8 },
+    ],
   },
 ];
 
@@ -143,6 +234,34 @@ export const CustomEquipmentCadModal: React.FC<CustomEquipmentCadModalProps> = (
       roleImpact: 'none',
     },
   ]);
+
+  const [baseType, setBaseType] = useState<EquipmentSubType>('mill_sag');
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | undefined>(undefined);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleLoadComplexPreset = (preset: ComplexPresetTemplate) => {
+    setName(preset.name);
+    setPrefix(preset.prefix);
+    setCategory(preset.category);
+    setBaseType(preset.baseType);
+    setUnitRole(preset.unitRole);
+    setInletCount(preset.inletCount);
+    setOutletCount(preset.outletCount);
+    setPrimitives(preset.primitives.map((p) => ({ ...p, id: `${p.id}-${Date.now()}` })));
+    setUploadedImageUrl(undefined);
+  };
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setUploadedImageUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const [newInputLabel, setNewInputLabel] = useState<string>('');
   const [newInputUnit, setNewInputUnit] = useState<string>('m³/h');
@@ -330,6 +449,7 @@ export const CustomEquipmentCadModal: React.FC<CustomEquipmentCadModalProps> = (
     inletCount,
     outletCount,
     customInputs,
+    uploaded_image_data_url: uploadedImageUrl,
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -364,13 +484,14 @@ export const CustomEquipmentCadModal: React.FC<CustomEquipmentCadModalProps> = (
     };
 
     const newItem: EquipmentCatalogItem = {
-      type: 'mill_sag',
+      type: baseType,
       category,
       name: cleanName,
       prefix: cleanPrefix,
       description: `${description} (${widthM}m × ${heightM}m)`,
       defaultParams,
       customDrawing: previewCustomDrawing,
+      keywords: [cleanName.toLowerCase(), cleanPrefix.toLowerCase(), 'custom', 'cad'],
     };
 
     onSaveEquipment(newItem);
@@ -414,6 +535,55 @@ export const CustomEquipmentCadModal: React.FC<CustomEquipmentCadModalProps> = (
         <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12">
           {/* COLUMNA IZQUIERDA (7 cols): Lienzo Interactivo AutoCAD + Herramientas Geométricas */}
           <div className="lg:col-span-7 p-4 border-b lg:border-b-0 lg:border-r border-slate-800 space-y-3.5 bg-slate-950/60">
+            {/* Plantillas de Equipos Complejos en 1 Clic + Subida de Imagen/Croquis */}
+            <div className="p-2.5 rounded bg-slate-900/90 border border-cyan-500/30 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-mono text-cyan-300 font-semibold flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5" />
+                  PLANTILLAS DE EQUIPOS COMPLEJOS O SUBIR IMAGEN / PLANO:
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                    onChange={handleImageFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    className="px-2.5 py-1 rounded bg-amber-400/20 hover:bg-amber-400 hover:text-slate-950 text-amber-300 border border-amber-400/50 text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ImagePlus className="w-3.5 h-3.5" />
+                    Subir Imagen / Croquis (PNG/SVG)
+                  </button>
+                  {uploadedImageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setUploadedImageUrl(undefined)}
+                      className="px-2 py-1 rounded bg-rose-950/70 text-rose-200 border border-rose-500/40 text-[10px] font-mono cursor-pointer"
+                    >
+                      Quitar Imagen
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {COMPLEX_CAD_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleLoadComplexPreset(preset)}
+                    className="px-2 py-1.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-700 hover:border-cyan-400 text-[11px] text-slate-200 font-medium text-left truncate transition-colors cursor-pointer"
+                    title={`Cargar plantilla editable: ${preset.name}`}
+                  >
+                    ⚡ {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Barra de Herramientas Geométricas CAD */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">

@@ -21,22 +21,37 @@ export type EquipmentSubType =
   // Comminución
   | 'crusher_jaw'
   | 'crusher_cone'
+  | 'crusher_gyratory'
   | 'mill_sag'
   | 'mill_ball'
+  | 'mill_rod'
+  | 'mill_vertical_tower'
   | 'mill_hpgr'
   | 'screen_vibrating'
   | 'hydrocyclone'
+  | 'hydrocyclone_cluster'
+  | 'spiral_classifier'
   // Separación y Concentración
   | 'flotation_rougher'
   | 'flotation_scavenger'
   | 'flotation_cleaner'
+  | 'flotation_column'
   | 'thickener'
   | 'filter_press'
+  | 'vacuum_disc_filter'
   | 'magnetic_separator'
-  // Manejo de Sólidos/Líquidos
+  | 'knelson_concentrator'
+  // Manejo de Sólidos/Líquidos y Hidrometalurgia
   | 'slurry_pump'
+  | 'pump_sump_box'
   | 'conveyor_belt'
+  | 'apron_feeder'
+  | 'stockpile_dome'
+  | 'agglomeration_drum'
   | 'leach_tank'
+  | 'sx_mixer_settler'
+  | 'ew_cell'
+  | 'rotary_dryer'
   | 'pipeline_header'
   // Bloques Genéricos
   | 'feed_source'
@@ -124,6 +139,7 @@ export interface CustomEquipmentDrawing {
   inletCount: number;    // Cantidad de entradas (1 a 3)
   outletCount: number;   // Cantidad de salidas (1 a 3)
   customInputs: CustomInputFieldDef[];
+  uploaded_image_data_url?: string; // Imagen o croquis subido por el usuario (PNG/SVG/JPG)
 }
 
 export interface EquipmentParameters {

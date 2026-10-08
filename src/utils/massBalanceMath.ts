@@ -69,28 +69,43 @@ export function getEquipmentUnitRole(
       return 'feed_generator';
     case 'crusher_jaw':
     case 'crusher_cone':
+    case 'crusher_gyratory':
     case 'mill_sag':
     case 'mill_ball':
+    case 'mill_rod':
+    case 'mill_vertical_tower':
     case 'mill_hpgr':
+    case 'agglomeration_drum':
       return 'crushing_grinding';
     case 'screen_vibrating':
     case 'hydrocyclone':
+    case 'hydrocyclone_cluster':
+    case 'spiral_classifier':
       return 'size_classifier';
     case 'flotation_rougher':
     case 'flotation_scavenger':
     case 'flotation_cleaner':
+    case 'flotation_column':
     case 'magnetic_separator':
+    case 'knelson_concentrator':
     case 'leach_tank':
+    case 'sx_mixer_settler':
+    case 'ew_cell':
       return 'concentration_leach';
     case 'thickener':
     case 'filter_press':
+    case 'vacuum_disc_filter':
+    case 'rotary_dryer':
       return 'dewatering';
     case 'splitter_node':
       return 'flow_splitter';
     case 'product_sink':
       return 'output_sink';
     case 'slurry_pump':
+    case 'pump_sump_box':
     case 'conveyor_belt':
+    case 'apron_feeder':
+    case 'stockpile_dome':
     case 'pipeline_header':
     case 'mixer_node':
     default:

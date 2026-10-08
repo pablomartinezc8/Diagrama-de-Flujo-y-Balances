@@ -58,6 +58,79 @@ export const EquipmentSymbolSvg: React.FC<EquipmentIconProps> = ({
   customDrawing,
   showDimensionsOverlay = false,
 }) => {
+  // Si el equipo tiene una imagen personalizada subida (PNG/JPG/SVG), la mostramos integrada en el bloque industrial
+  if (customDrawing && customDrawing.uploaded_image_data_url) {
+    const inPorts = Math.max(1, Math.min(3, customDrawing.inletCount || 1));
+    const outPorts = Math.max(1, Math.min(3, customDrawing.outletCount || 1));
+    return (
+      <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+        <rect
+          x="14"
+          y="6"
+          width="152"
+          height="92"
+          rx="4"
+          fill="#0F172A"
+          fillOpacity="0.65"
+          stroke="#334155"
+          strokeWidth="1.2"
+        />
+        <image
+          href={customDrawing.uploaded_image_data_url}
+          x="18"
+          y="10"
+          width="144"
+          height="84"
+          preserveAspectRatio="xMidYMid meet"
+        />
+        {Array.from({ length: inPorts }).map((_, i) => {
+          const py = inPorts === 1 ? 52 : 30 + i * 24;
+          return (
+            <rect
+              key={`in-img-${i}`}
+              x="6"
+              y={py - 4}
+              width="7"
+              height="8"
+              rx="1"
+              fill="#0284C7"
+              stroke="#E0F2FE"
+              strokeWidth="0.9"
+            />
+          );
+        })}
+        {Array.from({ length: outPorts }).map((_, i) => {
+          const py = outPorts === 1 ? 52 : 30 + i * 24;
+          return (
+            <rect
+              key={`out-img-${i}`}
+              x="167"
+              y={py - 4}
+              width="7"
+              height="8"
+              rx="1"
+              fill="#10B981"
+              stroke="#D1FAE5"
+              strokeWidth="0.9"
+            />
+          );
+        })}
+        {showDimensionsOverlay && (
+          <text
+            x="90"
+            y="106"
+            fill="#22D3EE"
+            fontSize="8"
+            fontFamily="monospace"
+            textAnchor="middle"
+          >
+            {customDrawing.dimensions.width_m}m × {customDrawing.dimensions.height_m}m
+          </text>
+        )}
+      </svg>
+    );
+  }
+
   // Si el equipo fue diseñado a medida en el Estudio CAD, renderizamos sus primitivas con auto-estilo industrial
   if (customDrawing && customDrawing.primitives.length > 0) {
     const gradId = 'cad-ind';
@@ -508,6 +581,270 @@ export const EquipmentSymbolSvg: React.FC<EquipmentIconProps> = ({
           {/* Pistones hidráulicos laterales */}
           <rect x="14" y="48" width="16" height="20" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.3" />
           <rect x="22" y="88" width="136" height="10" fill="#A16207" stroke="#713F12" strokeWidth="1.4" />
+        </svg>
+      );
+
+    case 'hydrocyclone_cluster':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Cabezal / Distribuidor radial superior (Manifold ocre con domo igual a Cyclone's Cluster A) */}
+          <path d="M80 16 Q90 9 100 16 Z" fill="#CA8A04" stroke="#713F12" strokeWidth="1.2" />
+          <rect x="74" y="16" width="32" height="7" rx="1" fill="#EAB308" stroke="#713F12" strokeWidth="1.4" />
+
+          {/* Líneas de alimentación desde el distribuidor hacia ambos ciclones con flechas */}
+          <polyline
+            points="74,19 52,19 52,44 58,44"
+            fill="none"
+            stroke="#94A3B8"
+            strokeWidth="1.5"
+          />
+          <polygon points="60,44 55,41.5 55,46.5" fill="#38BDF8" />
+
+          <polyline
+            points="106,19 124,19 124,44 116,44"
+            fill="none"
+            stroke="#94A3B8"
+            strokeWidth="1.5"
+          />
+          <polygon points="114,44 119,41.5 119,46.5" fill="#38BDF8" />
+
+          {/* Canaleta / Bandeja Superior Inclinada de Overflow (Launder superior con bordes escalonados) */}
+          <polyline
+            points="32,32 39,32 39,46 164,53 164,32 171,32"
+            fill="none"
+            stroke="#CBD5E1"
+            strokeWidth="1.6"
+          />
+
+          {/* Hidrociclón Izquierdo (Cabezal, cilindro y cono) */}
+          <rect x="63" y="30" width="12" height="3" fill="#0F172A" />
+          <rect x="65" y="33" width="8" height="4" fill="#CA8A04" stroke="#713F12" strokeWidth="1.1" />
+          <rect x="61" y="37" width="16" height="17" fill="#EAB308" stroke="#713F12" strokeWidth="1.4" />
+          <line x1="61" y1="49" x2="77" y2="49" stroke="#713F12" strokeWidth="1.2" />
+          <polygon points="61,54 77,54 70,72 68,72" fill="#CA8A04" stroke="#713F12" strokeWidth="1.4" />
+
+          {/* Hidrociclón Derecho (Cabezal, cilindro y cono) */}
+          <rect x="101" y="30" width="12" height="3" fill="#0F172A" />
+          <rect x="103" y="33" width="8" height="4" fill="#CA8A04" stroke="#713F12" strokeWidth="1.1" />
+          <rect x="99" y="37" width="16" height="17" fill="#EAB308" stroke="#713F12" strokeWidth="1.4" />
+          <line x1="99" y1="49" x2="115" y2="49" stroke="#713F12" strokeWidth="1.2" />
+          <polygon points="99,54 115,54 108,71 106,71" fill="#CA8A04" stroke="#713F12" strokeWidth="1.4" />
+
+          {/* Cajón Colector Inferior Doble con Tabique Divisor y Fondo Inclinado (Sump / Launder Underflow & Overflow) */}
+          <polyline
+            points="24,56 34,56 34,86 86,86 154,74 154,53 161,53"
+            fill="rgba(30, 41, 59, 0.45)"
+            stroke="#CBD5E1"
+            strokeWidth="1.7"
+          />
+          {/* Tabique divisor central entre cámara de gruesos (UF) y cámara de finos (OF) */}
+          <line x1="86" y1="53" x2="86" y2="86" stroke="#38BDF8" strokeWidth="1.7" />
+
+          {/* Boquillas inferiores de descarga Underflow (izquierda) y Overflow (derecha) */}
+          <line x1="58" y1="86" x2="58" y2="104" stroke="#F59E0B" strokeWidth="2.5" />
+          <line x1="104" y1="83" x2="104" y2="104" stroke="#38BDF8" strokeWidth="2.5" />
+        </svg>
+      );
+
+    case 'crusher_gyratory':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Tolva superior de descarga de camiones ROM */}
+          <polygon points="18,10 162,10 140,26 40,26" fill="#EAB308" stroke="#713F12" strokeWidth="1.5" />
+          {/* Carcasa reloj de arena del Giratorio */}
+          <polygon points="40,26 140,26 118,68 62,68" fill="#CA8A04" stroke="#713F12" strokeWidth="1.6" />
+          <polygon points="62,68 118,68 130,92 50,92" fill="#A16207" stroke="#713F12" strokeWidth="1.6" />
+          {/* Manto / Campana central */}
+          <polygon points="90,20 110,64 70,64" fill="#334155" stroke="#38BDF8" strokeWidth="1.6" />
+          <rect x="85" y="64" width="10" height="28" fill="#475569" />
+          <rect x="130" y="72" width="28" height="16" rx="2" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.3" />
+        </svg>
+      );
+
+    case 'mill_rod':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          <polygon points="14,32 38,32 46,52 30,52" fill="#EAB308" stroke="#713F12" strokeWidth="1.4" />
+          <rect x="46" y="26" width="96" height="52" rx="2" fill="#EAB308" stroke="#713F12" strokeWidth="1.6" />
+          {/* Barras longitudinales internas visibles */}
+          <line x1="54" y1="36" x2="134" y2="36" stroke="#713F12" strokeWidth="2" />
+          <line x1="54" y1="46" x2="134" y2="46" stroke="#713F12" strokeWidth="2" />
+          <line x1="54" y1="56" x2="134" y2="56" stroke="#713F12" strokeWidth="2" />
+          <line x1="54" y1="66" x2="134" y2="66" stroke="#713F12" strokeWidth="2" />
+          <rect x="142" y="40" width="14" height="24" fill="#CA8A04" stroke="#713F12" strokeWidth="1.4" />
+          <rect x="34" y="68" width="28" height="16" rx="2" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.3" />
+          <rect x="28" y="84" width="128" height="10" fill="#A16207" stroke="#713F12" strokeWidth="1.4" />
+        </svg>
+      );
+
+    case 'mill_vertical_tower':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Cabezal motriz superior azul del Vertimill */}
+          <rect x="72" y="6" width="36" height="16" rx="2" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.4" />
+          {/* Torre cilíndrica vertical con tornillo helicoidal */}
+          <rect x="66" y="22" width="48" height="62" rx="3" fill="#EAB308" stroke="#713F12" strokeWidth="1.6" />
+          <path d="M74 30 L106 40 L74 50 L106 60 L74 70 L106 78" stroke="#1E293B" strokeWidth="2.5" fill="none" />
+          {/* Bastidor estructural vertical */}
+          <line x1="52" y1="18" x2="52" y2="94" stroke="#64748B" strokeWidth="3" />
+          <line x1="128" y1="18" x2="128" y2="94" stroke="#64748B" strokeWidth="3" />
+          <rect x="40" y="92" width="100" height="8" fill="#A16207" stroke="#713F12" strokeWidth="1.4" />
+        </svg>
+      );
+
+    case 'spiral_classifier':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Batea inclinada del clasificador de espiral */}
+          <polygon points="22,64 148,22 156,48 30,90" fill="#EAB308" stroke="#713F12" strokeWidth="1.6" />
+          {/* Eje y espiral helicoidal */}
+          <line x1="26" y1="76" x2="152" y2="34" stroke="#1E293B" strokeWidth="3" />
+          <path d="M38 72 Q44 60 52 68 Q60 56 68 62 Q76 50 84 58 Q92 44 100 52 Q108 38 116 46 Q124 34 132 40" stroke="#38BDF8" strokeWidth="2" fill="none" />
+          <rect x="144" y="12" width="22" height="16" rx="2" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.3" />
+          <rect x="20" y="90" width="140" height="7" fill="#64748B" />
+        </svg>
+      );
+
+    case 'flotation_column':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Ducha superior de agua de lavado */}
+          <path d="M60 10 H120" stroke="#38BDF8" strokeWidth="2.5" />
+          {/* Canaleta anular de espuma superior */}
+          <rect x="58" y="16" width="64" height="12" rx="2" fill="#10B981" stroke="#065F46" strokeWidth="1.4" />
+          {/* Columna alta de flotación */}
+          <rect x="68" y="28" width="44" height="60" fill="#1E293B" stroke="#38BDF8" strokeWidth="1.8" />
+          {/* Cono inferior de colas y spargers de aire */}
+          <polygon points="68,88 112,88 94,102 86,102" fill="#CA8A04" stroke="#713F12" strokeWidth="1.4" />
+          <circle cx="82" cy="72" r="2.5" fill="#38BDF8" />
+          <circle cx="90" cy="62" r="2.5" fill="#38BDF8" />
+          <circle cx="98" cy="52" r="2.5" fill="#38BDF8" />
+          <circle cx="85" cy="42" r="3" fill="#10B981" />
+        </svg>
+      );
+
+    case 'vacuum_disc_filter':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Batea inferior de pulpa */}
+          <polygon points="24,58 156,58 144,90 36,90" fill="#1E293B" stroke="#94A3B8" strokeWidth="1.6" />
+          {/* Eje central horizontal y discos verticales paralelos */}
+          <rect x="18" y="48" width="144" height="8" fill="#CA8A04" stroke="#713F12" strokeWidth="1.3" />
+          {[42, 62, 82, 102, 122].map((dx) => (
+            <ellipse key={dx} cx={dx} cy="52" rx="6" ry="34" fill="#EAB308" stroke="#713F12" strokeWidth="1.4" />
+          ))}
+          <rect x="148" y="42" width="22" height="20" rx="2" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.3" />
+        </svg>
+      );
+
+    case 'knelson_concentrator':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Tubería superior de alimentación */}
+          <rect x="85" y="8" width="10" height="18" fill="#CA8A04" stroke="#713F12" strokeWidth="1.2" />
+          {/* Carcasa troncocónica centrífuga con anillos rifleados */}
+          <polygon points="50,26 130,26 112,76 68,76" fill="#EAB308" stroke="#713F12" strokeWidth="1.6" />
+          <line x1="56" y1="38" x2="124" y2="38" stroke="#38BDF8" strokeWidth="1.8" />
+          <line x1="60" y1="50" x2="120" y2="50" stroke="#38BDF8" strokeWidth="1.8" />
+          <line x1="64" y1="62" x2="116" y2="62" stroke="#38BDF8" strokeWidth="1.8" />
+          <rect x="74" y="76" width="32" height="16" rx="2" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.4" />
+          <rect x="44" y="92" width="92" height="7" fill="#A16207" />
+        </svg>
+      );
+
+    case 'pump_sump_box':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Cajón sumidero metálico receptor de pulpa (Izquierda) */}
+          <polygon points="18,22 86,22 78,84 26,84" fill="#1E293B" stroke="#EAB308" strokeWidth="1.8" />
+          <rect x="22" y="34" width="60" height="48" fill="#0284C7" fillOpacity="0.35" />
+          {/* Tubería de succión inferior y Bomba Centrífuga (Derecha) */}
+          <rect x="78" y="68" width="30" height="10" fill="#CA8A04" stroke="#713F12" strokeWidth="1.3" />
+          <circle cx="122" cy="68" r="20" fill="#EAB308" stroke="#713F12" strokeWidth="1.8" />
+          <circle cx="122" cy="68" r="8" fill="#334155" stroke="#38BDF8" strokeWidth="1.4" />
+          <rect x="116" y="20" width="12" height="32" fill="#EAB308" stroke="#713F12" strokeWidth="1.4" />
+          <rect x="142" y="54" width="26" height="28" rx="2" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.3" />
+          <rect x="14" y="86" width="156" height="9" fill="#A16207" stroke="#713F12" strokeWidth="1.3" />
+        </svg>
+      );
+
+    case 'apron_feeder':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Chute de carga superior */}
+          <polygon points="24,18 76,18 68,48 32,48" fill="#CA8A04" stroke="#713F12" strokeWidth="1.5" />
+          {/* Oruga de placas metálicas pesadas */}
+          <rect x="20" y="48" width="140" height="26" rx="13" fill="#EAB308" stroke="#713F12" strokeWidth="2" />
+          <circle cx="36" cy="61" r="8" fill="#1E293B" stroke="#38BDF8" strokeWidth="1.6" />
+          <circle cx="90" cy="61" r="6" fill="#334155" />
+          <circle cx="144" cy="61" r="8" fill="#1D4ED8" stroke="#93C5FD" strokeWidth="1.6" />
+          <rect x="18" y="78" width="144" height="10" fill="#475569" />
+        </svg>
+      );
+
+    case 'stockpile_dome':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Cubierta geodésica del Domo */}
+          <path d="M16 86 Q90 4 164 86 Z" fill="#1E293B" stroke="#38BDF8" strokeWidth="1.8" strokeDasharray="6 3" />
+          {/* Pila cónica de mineral grueso en el interior */}
+          <polygon points="28,86 90,32 152,86" fill="#CA8A04" stroke="#713F12" strokeWidth="1.6" />
+          {/* Túnel de reclamación inferior y chutes */}
+          <rect x="12" y="86" width="156" height="10" fill="#475569" stroke="#0F172A" strokeWidth="1.3" />
+          <rect x="68" y="86" width="12" height="8" fill="#EAB308" />
+          <rect x="100" y="86" width="12" height="8" fill="#EAB308" />
+        </svg>
+      );
+
+    case 'agglomeration_drum':
+    case 'rotary_dryer':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Tambor rotatorio inclinado con llantas de rodadura */}
+          <g transform="rotate(6 90 55)">
+            <rect x="28" y="28" width="124" height="44" rx="3" fill="#EAB308" stroke="#713F12" strokeWidth="1.6" />
+            <rect x="52" y="24" width="10" height="52" fill="#334155" stroke="#0F172A" strokeWidth="1.3" />
+            <rect x="118" y="24" width="10" height="52" fill="#334155" stroke="#0F172A" strokeWidth="1.3" />
+            <line x1="16" y1="42" x2="48" y2="42" stroke="#38BDF8" strokeWidth="3" />
+          </g>
+          <rect x="68" y="74" width="34" height="16" rx="2" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.3" />
+          <rect x="22" y="90" width="136" height="8" fill="#A16207" stroke="#713F12" strokeWidth="1.3" />
+        </svg>
+      );
+
+    case 'sx_mixer_settler':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Cajón Mezclador Agitado (Izquierda) */}
+          <rect x="28" y="10" width="20" height="12" rx="1.5" fill="#1D4ED8" stroke="#0F172A" strokeWidth="1.2" />
+          <rect x="18" y="26" width="40" height="60" fill="#CA8A04" stroke="#713F12" strokeWidth="1.6" />
+          <line x1="38" y1="22" x2="38" y2="70" stroke="#F8FAFC" strokeWidth="2.2" />
+          {/* Piscina Decantadora SX (Derecha) con fases Orgánico / Acuoso PLS */}
+          <rect x="58" y="34" width="106" height="52" fill="#1E293B" stroke="#38BDF8" strokeWidth="1.6" />
+          <rect x="60" y="36" width="102" height="20" fill="#F59E0B" fillOpacity="0.65" />
+          <rect x="60" y="56" width="102" height="28" fill="#0284C7" fillOpacity="0.55" />
+          <rect x="14" y="86" width="154" height="8" fill="#475569" />
+        </svg>
+      );
+
+    case 'ew_cell':
+      return (
+        <svg viewBox="0 0 180 110" fill="none" className={className} aria-hidden="true">
+          {/* Celda electrolítica polimérica con barras busbar y cátodos de cobre */}
+          <rect x="20" y="32" width="140" height="54" rx="2" fill="#1E293B" stroke="#38BDF8" strokeWidth="1.8" />
+          <rect x="16" y="26" width="148" height="6" fill="#EAB308" stroke="#713F12" strokeWidth="1.3" />
+          {[32, 46, 60, 74, 88, 102, 116, 130, 144].map((cx, i) => (
+            <line
+              key={cx}
+              x1={cx}
+              y1="20"
+              x2={cx}
+              y2="78"
+              stroke={i % 2 === 0 ? '#F97316' : '#94A3B8'}
+              strokeWidth="3"
+            />
+          ))}
+          <rect x="14" y="86" width="152" height="8" fill="#CA8A04" />
         </svg>
       );
 
